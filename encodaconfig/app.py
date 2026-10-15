@@ -28,9 +28,23 @@ st.set_page_config(page_title="EnCoDaPy Configurator", page_icon="⚙️", layou
 
 GITHUB_REPO_URL = "https://github.com/gewv-tu-dresden/encodapy"
 DOCS_URL = "https://gewv-tu-dresden.github.io/encodapy/"
+DOCS_MODEL_URL = f"{DOCS_URL}basic_service/config_models.html"
+DOCS_ENV_URL = f"{DOCS_URL}basic_service/env_values.html"
 DOCS_CONFIG_URL = f"{DOCS_URL}basic_service.html"
 DOCS_COMPONENTS_URL = f"{DOCS_URL}components.html"
-DOCS_ENV_URL = f"{DOCS_URL}basic_service.html"
+DOCS_MODEL_SECTIONS = {
+    "ConfigModel": f"{DOCS_MODEL_URL}#encodapy.config.models.ConfigModel",
+    "interfaces": f"{DOCS_MODEL_URL}#encodapy.config.models.InterfaceModel",
+    "inputs": f"{DOCS_MODEL_URL}#encodapy.config.models.InputModel",
+    "staticdata": f"{DOCS_MODEL_URL}#encodapy.config.models.StaticDataModel",
+    "outputs": f"{DOCS_MODEL_URL}#encodapy.config.models.OutputModel",
+    "attributes": f"{DOCS_MODEL_URL}#encodapy.config.models.AttributeModel",
+    "commands": f"{DOCS_MODEL_URL}#encodapy.config.models.CommandModel",
+    "components": f"{DOCS_MODEL_URL}#encodapy.components.basic_component_config.ControllerComponentModel",
+    "settings": f"{DOCS_MODEL_URL}#encodapy.config.models.ControllerSettingModel",
+    "calculation": f"{DOCS_MODEL_URL}#encodapy.config.models.TimeSettingsCalculationModel",
+    "env": f"{DOCS_ENV_URL}#encodapy.config.env_values",
+}
 GEWV_URL = "https://tu-dresden.de/ing/maschinenwesen/iet/gewv"
 LOGO_URL = (
     "https://raw.githubusercontent.com/gewv-tu-dresden/encodapy/main/"
@@ -59,6 +73,41 @@ def _get_component_io_cached(component_type: str):
         return get_component_io(component_type)
     except (AttributeError, ImportError, KeyError, TypeError):
         return None
+
+
+@st.cache_data(show_spinner=False)
+def _model_field_help(model_path: str, field_name: str) -> str | None:
+    """Build the help text for a form field directly from the EnCoDaPy
+    model field description, including a link to the model docs.
+
+    Args:
+        model_path (str): Import path of the model class
+            (e.g. "encodapy.config.models.OutputModel").
+        field_name (str): Name of the field.
+
+    Returns:
+        Optional[str]: Help text with description + docs link or None.
+    """
+    try:
+        module_name, class_name = model_path.rsplit(".", 1)
+        module = __import__(module_name, fromlist=[class_name])
+        model_class = getattr(module, class_name)
+        field = model_class.model_fields.get(field_name)
+    except (ImportError, AttributeError):
+        return None
+    if field is None:
+        return None
+    class_anchor = f"encodapy.{model_path.split('encodapy.', 1)[-1]}"
+    docs_link = f"{DOCS_MODEL_URL}#{class_anchor}"
+    description = (field.description or "").strip()
+    link_text = f"[Docs: {class_name}]({docs_link})"
+    return f"{description}\n\n{link_text}" if description else link_text
+
+
+@st.cache_data(show_spinner=False)
+def _model_docs_link(section: str) -> str:
+    """Docs link (config_models.html anchor) for a config section."""
+    return DOCS_MODEL_SECTIONS.get(section, DOCS_MODEL_URL)
 
 
 def new_config() -> dict[str, Any]:
@@ -108,17 +157,25 @@ def component_type_options() -> list[str]:
     return options
 
 
+ENTITY_MODEL_PATHS = {
+    "inputs": "encodapy.config.models.InputModel",
+    "staticdata": "encodapy.config.models.StaticDataModel",
+    "outputs": "encodapy.config.models.OutputModel",
+}
+
+
 def render_entity(section: str, index: int) -> None:
     """Render form fields for one entity (input/staticdata/output)."""
     config = st.session_state["config"]
     entities = config[section]
     entity = entities[index]
+    model_path = ENTITY_MODEL_PATHS[section]
     col_id, col_iface, col_col = st.columns([3, 2, 1])
     entity["id"] = col_id.text_input(
         f"ID {index + 1}",
         value=entity.get("id", ""),
         key=f"{section}_{index}_id",
-        help="Unique ID of the entity (e.g. 'thermal_storage').",
+        help=_model_field_help(model_path, "id"),
     )
     iface_value = entity.get("interface", "fiware")
     iface_options = [e.value for e in Interfaces]
@@ -127,8 +184,7 @@ def render_entity(section: str, index: int) -> None:
         options=iface_options,
         index=iface_options.index(iface_value),
         key=f"{section}_{index}_iface",
-        help="Interface used to transfer the data. The interface must be "
-        "activated in the 'Interfaces' tab.",
+        help=_model_field_help(model_path, "interface"),
     )
     if col_col.button("Delete", key=f"{section}_{index}_del"):
         entities.pop(index)
@@ -137,8 +193,7 @@ def render_entity(section: str, index: int) -> None:
         f"ID interface {index + 1} (empty = ID)",
         value=entity.get("id_interface", ""),
         key=f"{section}_{index}_idiface",
-        help="ID of the entity on the interface (FIWARE entity ID, MQTT "
-        "topic ...). Leave empty to use the ID.",
+        help=_model_field_help(model_path, "id_interface"),
     )
     attributes = entity.setdefault("attributes", [])
     if st.button(
@@ -153,18 +208,51 @@ def render_entity(section: str, index: int) -> None:
             f"Attribute {attr_idx + 1}",
             value=attribute.get("id", ""),
             key=f"{section}_{index}_attr{attr_idx}_id",
-            help="Unique ID of the attribute (e.g. 'temperature_1'). "
-            "Components reference exactly this ID later on.",
+            help=_model_field_help("encodapy.config.models.AttributeModel", "id"),
         )
         attribute["id_interface"] = col_b.text_input(
             f"Attribute ID interface {attr_idx + 1} (empty = ID)",
             value=attribute.get("id_interface", ""),
             key=f"{section}_{index}_attr{attr_idx}_idiface",
-            help="ID of the attribute on the interface (e.g. FIWARE attribute name).",
+            help=_model_field_help(
+                "encodapy.config.models.AttributeModel", "id_interface"
+            ),
         )
         if col_c.button("✕", key=f"{section}_{index}_attr{attr_idx}_del"):
             attributes.pop(attr_idx)
             st.rerun()
+    if section == "outputs":
+        commands = entity.setdefault("commands", [])
+        st.markdown(
+            f"**Commands** — commands the controller can send via this "
+            "output (e.g. switching commands). "
+            f"{_model_docs_link('commands')}"
+        )
+        if st.button(
+            f"+ Add command ({entity['id'] or section})",
+            key=f"{section}_{index}_addcmd",
+        ):
+            commands.append({"id": ""})
+            st.rerun()
+        for cmd_idx, command in enumerate(commands):
+            col_a, col_b, col_c = st.columns([3, 3, 1])
+            command["id"] = col_a.text_input(
+                f"Command {cmd_idx + 1}",
+                value=command.get("id", ""),
+                key=f"{section}_{index}_cmd{cmd_idx}_id",
+                help=_model_field_help("encodapy.config.models.CommandModel", "id"),
+            )
+            command["id_interface"] = col_b.text_input(
+                f"Command ID interface {cmd_idx + 1} (empty = ID)",
+                value=command.get("id_interface", ""),
+                key=f"{section}_{index}_cmd{cmd_idx}_idiface",
+                help=_model_field_help(
+                    "encodapy.config.models.CommandModel", "id_interface"
+                ),
+            )
+            if col_c.button("✕", key=f"{section}_{index}_cmd{cmd_idx}_del"):
+                commands.pop(cmd_idx)
+                st.rerun()
 
 
 def render_component(index: int) -> None:
@@ -455,9 +543,9 @@ def main() -> None:
             "⬆️ Outputs",
             "🔧 Components",
             "⏱️ Settings",
-            "🌱 ENV",
             "✅ Validation",
             "📤 Export",
+            "🌱 ENV",
         ]
     )
 
@@ -466,7 +554,7 @@ def main() -> None:
         st.caption(
             "Activate at least one interface. Every entity in inputs/"
             "staticdata/outputs uses exactly one of them. "
-            f"[Docs: configuration]({DOCS_CONFIG_URL})"
+            f"{_model_docs_link('interfaces')}"
         )
         for interface in INTERFACES:
             config["interfaces"][interface] = st.checkbox(
@@ -477,7 +565,7 @@ def main() -> None:
     for tab_pos, section in enumerate(["inputs", "staticdata", "outputs"], start=1):
         with tabs[tab_pos]:
             st.header(section.capitalize())
-            st.caption(f"{SECTION_DESCRIPTIONS[section]} [Docs]({DOCS_CONFIG_URL})")
+            st.caption(f"{SECTION_DESCRIPTIONS[section]} {_model_docs_link(section)}")
             if st.button(f"+ Add {section[:-1]}", key=f"add_{section}"):
                 config[section].append({"id": "", "attributes": []})
                 st.rerun()
@@ -511,8 +599,7 @@ def main() -> None:
     with tabs[5]:
         st.header("Controller Settings")
         st.caption(
-            "Time settings for the calculation. Details in the "
-            f"[docs]({DOCS_CONFIG_URL})."
+            f"Time settings for the calculation. {_model_docs_link('calculation')}"
         )
         calculation = config["controller_settings"]["time_settings"].setdefault(
             "calculation", {}
@@ -557,38 +644,6 @@ def main() -> None:
         )
 
     with tabs[6]:
-        st.header("Environment Variables")
-        st.caption(
-            "Based on the interfaces activated in the configuration, the "
-            "following environment variables are required/optional for "
-            "the service. Copy the template below into a `.env` file next "
-            f"to the service. [Docs]({DOCS_ENV_URL})"
-        )
-        groups = get_env_requirements(config["interfaces"])
-        for group, fields in groups.items():
-            st.markdown(f"**{group}**")
-            rows = []
-            for field in fields:
-                rows.append(
-                    {
-                        "Variable": field["name"],
-                        "Required": "yes" if field["required"] else "no (default)",
-                        "Default": field["default"],
-                        "Description": field["description"],
-                    }
-                )
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        st.subheader("`.env` template")
-        template = generate_env_template(config["interfaces"])
-        st.code(template, language="dotenv")
-        st.download_button(
-            "⬇️ Download .env template",
-            data=template,
-            file_name=".env",
-            mime="text/plain",
-        )
-
-    with tabs[7]:
         st.header("Validation")
         st.caption(
             "Summary of all checks: model validation (identical to "
@@ -598,7 +653,7 @@ def main() -> None:
         report = check_configuration(config)
         render_report(report)
 
-    with tabs[8]:
+    with tabs[7]:
         st.header("Export")
         st.caption(
             "The configuration is not saved automatically – export it as "
@@ -632,6 +687,46 @@ def main() -> None:
                 st.success(f"Saved to {save_path}")
             except OSError as error:
                 st.error(f"Saving failed: {error}")
+
+    with tabs[8]:
+        st.header("Environment Variables")
+        st.caption(
+            "Based on the interfaces activated in the configuration, the "
+            "following environment variables are required/optional for "
+            "the service. Copy the template below into a `.env` file next "
+            f"to the service. {_model_docs_link('env')}"
+        )
+        groups = get_env_requirements(config["interfaces"])
+        for group, fields in groups.items():
+            st.markdown(f"**{group}**")
+            rows = []
+            for field in fields:
+                required_label = (
+                    "yes"
+                    if field["required"]
+                    else "conditional"
+                    if field["condition"]
+                    else "no (default)"
+                )
+                rows.append(
+                    {
+                        "Variable": field["name"],
+                        "Required": required_label,
+                        "Default": field["default"],
+                        "Condition": field["condition"],
+                        "Description": field["description"],
+                    }
+                )
+            st.dataframe(rows, width="stretch", hide_index=True)
+        st.subheader("`.env` template")
+        template = generate_env_template(config["interfaces"])
+        st.code(template, language="dotenv")
+        st.download_button(
+            "⬇️ Download .env template",
+            data=template,
+            file_name=".env",
+            mime="text/plain",
+        )
 
 
 if __name__ == "__main__":

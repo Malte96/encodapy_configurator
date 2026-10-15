@@ -62,11 +62,11 @@ automatically available in the tool without further adaptations:
 from encodaconfig import check_configuration, get_component_io, validate_config
 
 report = check_configuration(config_dict)
-report["valid"]          # overall verdict
-report["errors"]         # model errors (path + message)
+report["valid"]  # overall verdict
+report["errors"]  # model errors (path + message)
 report["wiring_issues"]  # component IO problems (missing entity/attribute,
-                         # required inputs not allocated,
-                         # unexpected mappings, unknown type)
+# required inputs not allocated,
+# unexpected mappings, unknown type)
 ```
 
 `get_component_io("two_point_controller")` returns the expected
