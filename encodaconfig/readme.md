@@ -1,23 +1,23 @@
 # encodaconfig
 
-Visuelles Tool zur **Erstellung und Prüfung** von EnCoDaPy-Konfigurationen
-(JSON) im Browser. Das Tool ist ein eigener, leichtgewichtiger Subfolder und
-ist **nicht** mit einem laufenden EnCoDaPy-Service verbunden.
+Visual tool for **creating and validating** EnCoDaPy configurations (JSON)
+in the browser. The tool is a separate, lightweight subfolder and is
+**not** connected to a running EnCoDaPy service.
 
-## Umgebung (Poetry)
+## Environment (Poetry)
 
-Das Tool hat eine **eigene Poetry-Umgebung** (unabhängig von der
-EnCoDaPy-Hauptumgebung), damit Streamlit und seine transitiven Abhängigkeiten
-keine Konflikte mit dem Hauptpaket verursachen. `encodapy` selbst wird per
-Path-Dependency eingebunden:
+The tool has its **own Poetry environment** (independent of the main
+EnCoDaPy environment), so that Streamlit and its transitive dependencies
+do not cause conflicts with the main package. `encodapy` itself is
+included as a path dependency:
 
 ```toml
-# encodaconfig/pyproject.toml (Auszug)
+# encodaconfig/pyproject.toml (excerpt)
 encodapy = { path = "..", develop = true }
 streamlit = ">=1.40"
 ```
 
-Installation und Start:
+Installation and start:
 
 ```bash
 cd encodaconfig
@@ -25,68 +25,93 @@ poetry install
 poetry run streamlit run app.py
 ```
 
-Die App läuft lokal im Browser (`http://localhost:8501`).
+The app runs locally in the browser (`http://localhost:8501`).
 
-Tests laufen aus der Sub-Umgebung ebenfalls (das Hauptpaket ist ja per
-Path eingebunden):
+Tests also run from the sub-environment (the main package is included
+via the path dependency):
 
 ```bash
 cd encodaconfig
 poetry run pytest ../tests/encodaconfig -q
 ```
 
-## Start (alternativ ohne Poetry)
+## Start (alternative, without Poetry)
 
 ```bash
 pip install streamlit
 streamlit run encodaconfig/app.py
 ```
 
-## Funktionsweise
+## How it works
 
-Das Tool nutzt konsequent die vorhandenen Modelle und Loader des
-`encodapy`-Pakets – es wird keine eigene Modell-/Validierungslogik
-dupliziert. Dadurch sind neue Komponenten und Modelländerungen im
-Hauptpaket automatisch im Tool verfügbar, ohne zusätzliche Anpassungen:
+The tool consistently reuses the existing models and loaders of the
+`encodapy` package – no model or validation logic is duplicated. As a
+result, new components and model changes in the main package are
+automatically available in the tool without further adaptations:
 
-| Aufgabe | Verwendete EnCoDaPy-Bausteine |
+| Task | EnCoDaPy building blocks used |
 |---|---|
-| Formularstruktur / Validierung | `encodapy.config.models.ConfigModel` (Pydantic v2, inkl. aller `model_validator`-Prüfungen wie `check_interfaces`, Timerange-Checks) |
-| Komponenten-Inputs/-Outputs ermitteln | `encodapy.components.component_loader` (`get_component_input_data_model`, `get_component_output_data_model`, `get_component_config_data_model`) – dieselben Funktionen wie beim Start der Komponenten |
-| Externe Komponenten | dotted-path `type` (z. B. `my_package.my_component`), bereits von `check_component_type()` unterstützt |
+| Form structure / validation | `encodapy.config.models.ConfigModel` (Pydantic v2, including all `model_validator` checks such as `check_interfaces`, timerange checks) |
+| Component inputs/outputs | `encodapy.components.component_loader` (`get_component_input_data_model`, `get_component_output_data_model`, `get_component_config_data_model`) – the same functions used at component start |
+| External components | dotted-path `type` (e.g. `my_package.my_component`), already supported by `check_component_type()`; additionally uploadable as ZIP/wheel for the session |
+| Environment variables | `encodapy.config.env_values` (pydantic-settings models), introspected for the ENV tab |
 
-### Kernmodule (ohne Streamlit nutzbar)
+### Core modules (usable without Streamlit)
 
 ```python
 from encodaconfig import check_configuration, get_component_io, validate_config
 
 report = check_configuration(config_dict)
-report["valid"]  # Gesamturteil
-report["errors"]  # Modellfehler (Pfad + Meldung)
-report["wiring_issues"]  # Komponenten-IO-Probleme (Entity/Attribute fehlen,
-# erforderliche Inputs nicht zugeordnet,
-# unerwartete Zuordnungen, unbekannter Typ)
+report["valid"]          # overall verdict
+report["errors"]         # model errors (path + message)
+report["wiring_issues"]  # component IO problems (missing entity/attribute,
+                         # required inputs not allocated,
+                         # unexpected mappings, unknown type)
 ```
 
-`get_component_io("two_point_controller")` liefert die erwarteten
-Inputs/Outputs inkl. Pflichtfeldern und Beschreibungen; für nicht
-installierte/externe Typen wird `None` zurückgegeben.
+`get_component_io("two_point_controller")` returns the expected
+inputs/outputs including required flags and descriptions; for
+non-installed/external types `None` is returned.
 
-### Prüfungen im Detail
+### Checks in detail
 
-1. **Modellprüfung** – die Config wird gegen `ConfigModel` validiert
-   (identisch zum Service-Start, inkl. Interface- und Timerange-Validatoren).
-2. **Komponenten-IO-Prüfung** – für jede `controller_component` wird der Typ
-   über den Component-Loader aufgelöst und geprüft:
-   - Sind zugeordnete `entity`/`attribute` in `inputs`/`staticdata`/`outputs` definiert?
-   - Sind alle erforderlichen Inputs/Outputs der Komponente zugeordnet?
-   - Gibt es Zuordnungen zu Feldern, die die Komponente gar nicht hat?
+1. **Model validation** – the config is validated against `ConfigModel`
+   (identical to service start, including the interface and timerange
+   validators).
+2. **Component wiring check** – for every `controller_component` the type
+   is resolved via the component loader and checked:
+   - Are the mapped `entity`/`attribute` defined in
+     `inputs`/`staticdata`/`outputs`?
+   - Are all required inputs/outputs of the component allocated?
+   - Are there mappings to fields the component does not have?
+
+### UI overview
+
+- **Validate existing configuration:** upload a JSON file in the
+  sidebar – it is validated immediately and can then be edited in all
+  tabs.
+- **Create new configuration:** start with an empty configuration and
+  work through the tabs (Interfaces → Inputs/Staticdata/Outputs →
+  Components → Settings).
+- **Components tab:** the component type is selected via a searchable
+  dropdown; the expected inputs/outputs are loaded automatically from
+  the component model and can be mapped to entities/attributes via
+  dropdowns. Config fields support direct values (JSON) or references.
+- **ENV tab:** shows which environment variables are required/optional
+  for the interfaces activated in the configuration (introspected from
+  `encodapy.config.env_values`) and generates a copyable `.env`
+  template including a download button.
+- **External components:** either install the package in the
+  environment (recommended, as at service start) or upload its ZIP/wheel
+  in the sidebar – the package is made importable for the session
+  without writing to the environment. Loading code from URLs is
+  deliberately not supported for security and reproducibility reasons.
 
 ### Export
 
-Keine statische Speicherung: Die Config liegt im Session-State der App und
-kann als **JSON heruntergeladen** oder optional auf einem angegebenen Pfad
-gespeichert werden.
+No static storage: the configuration lives in the session state of the
+app and can be **downloaded as JSON** or optionally saved to a path of
+your choice. The tool is not connected to a running EnCoDaPy service.
 
 ## Tests
 
@@ -94,6 +119,6 @@ gespeichert werden.
 pytest tests/encodaconfig -v
 ```
 
-Die Tests decken Modellvalidierung, Komponenten-Introspektion und die
-Komponenten-Verdrahtungsprüfung ab (reine Unit-Tests, keine externen
-Abhängigkeiten).
+The tests cover model validation, component introspection, the
+component wiring check and the ENV requirements (pure unit tests, no
+external dependencies).
