@@ -671,20 +671,38 @@ def main() -> None:
                         + " – select them in the Components tab."
                     )
                 else:
-                    st.warning(
-                        "Package loaded (top-level packages: "
-                        + ", ".join(packages)
-                        + "), but no usable components found. A component "
-                        "is a package directory with a `<name>_config.py` "
-                        "module containing `InputData`/`OutputData`/"
-                        "`ConfigData` subclasses."
-                    )
+                    if not inspected:
+                        st.info(
+                            "Package loaded (top-level packages: "
+                            + ", ".join(packages)
+                            + "). No components found – if this is a "
+                            "utility/helper package (no `_config.py` "
+                            "component modules), that is fine: its "
+                            "modules are now importable for subsequently "
+                            "loaded component packages. Load the component "
+                            "ZIP afterwards."
+                        )
+                    else:
+                        st.warning(
+                            "Package loaded (top-level packages: "
+                            + ", ".join(packages)
+                            + "), but no usable components found. See the "
+                            "error details."
+                        )
                 if failed:
-                    st.warning(
-                        f"{len(failed)} component candidate(s) could not be loaded:"
+                    st.error(
+                        f"{len(failed)} component candidate(s) could not "
+                        "be loaded – see details below.",
+                        icon="⚠️",
                     )
-                    for candidate, error in failed.items():
-                        st.markdown(f"- `{candidate}`: {error}")
+                    st.session_state["ext_load_errors"] = failed
+                    st.toast(
+                        f"Component import failed: {next(iter(failed.values()))}",
+                        icon="⚠️",
+                    )
+                    with st.expander("Error details", expanded=True):
+                        for candidate, error in failed.items():
+                            st.markdown(f"- `{candidate}`: {error}")
             except (zipfile.BadZipFile, OSError) as error:
                 st.error(f"Could not load the package: {error}")
         if st.session_state.get("ext_component_types"):

@@ -9,6 +9,7 @@ loading such packages at runtime from an uploaded ZIP archive or wheel
 without installing them permanently.
 """
 
+import importlib
 import io
 import sys
 import tempfile
@@ -143,16 +144,36 @@ def inspect_component_types(path_entries: list[str]) -> dict[str, str | None]:
         for candidate in find_component_candidates(path_entry):
             if not candidate:
                 continue
+            name = candidate.rsplit(".", 1)[-1]
+            config_module = f"{candidate}.{name}_config"
+            try:
+                importlib.import_module(config_module)
+            except ModuleNotFoundError as error:
+                inspected[candidate] = (
+                    f"import of `{config_module}` failed: {error} – if the "
+                    "missing module is a separate utility package, upload "
+                    "its ZIP first and retry"
+                )
+                continue
+            except ImportError as error:
+                inspected[candidate] = f"import of `{config_module}` failed: {error}"
+                continue
+            except (RuntimeError, ValueError, SyntaxError) as error:
+                inspected[candidate] = (
+                    f"error while importing `{config_module}`: {error}"
+                )
+                continue
             try:
                 io = get_component_io(candidate)
-            except (AttributeError, ImportError, KeyError, TypeError) as error:
-                inspected[candidate] = f"import failed: {error}"
+            except (AttributeError, KeyError, TypeError) as error:
+                inspected[candidate] = f"could not be resolved: {error}"
                 continue
             if io is None:
                 inspected[candidate] = (
-                    "could not be resolved by the component loader "
-                    "(check the `<name>_config.py` module and its "
-                    "InputData/OutputData/ConfigData classes)"
+                    "the component loader could not resolve any "
+                    "InputData/OutputData classes – check the classes in "
+                    f"`{config_module}` (naming scheme: "
+                    "`<Component>InputData`/`<Component>OutputData`)"
                 )
             else:
                 inspected[candidate] = None
