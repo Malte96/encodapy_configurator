@@ -27,6 +27,22 @@ from encodapy.utils.units import TimeUnits
 
 st.set_page_config(page_title="EnCoDaPy Configurator", page_icon="⚙️", layout="wide")
 
+_DANGER_BUTTON_CSS = """
+<style>
+/* Delete/danger buttons use type="primary" and are colored red. */
+.stButton > button[kind="primary"] {
+    background-color: #dc3545;
+    color: #ffffff;
+    border: 1px solid #b02a37;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #c82333;
+    color: #ffffff;
+}
+</style>
+"""
+st.markdown(_DANGER_BUTTON_CSS, unsafe_allow_html=True)
+
 GITHUB_REPO_URL = "https://github.com/gewv-tu-dresden/encodapy"
 DOCS_URL = "https://gewv-tu-dresden.github.io/encodapy/"
 DOCS_MODEL_URL = f"{DOCS_URL}basic_service/config_models.html"
@@ -250,7 +266,11 @@ def render_entity(section: str, index: int) -> None:
         key=f"{section}_{index}_iface",
         help=_model_field_help(model_path, "interface"),
     )
-    if col_col.button("Delete", key=f"{section}_{index}_del"):
+    if col_col.button(
+        "🗑️ Delete",
+        key=f"{section}_{index}_del",
+        type="primary",
+    ):
         entities.pop(index)
         st.rerun()
     entity["id_interface"] = st.text_input(
@@ -261,11 +281,12 @@ def render_entity(section: str, index: int) -> None:
     )
     st.caption(_field_docs_link(model_path))
     attributes = entity.setdefault("attributes", [])
-    if not attributes:
+    commands = entity.setdefault("commands", []) if section == "outputs" else []
+    if not attributes and not commands:
         st.warning(
-            f"⚠️ This {ENTITY_SECTIONS[section]} has no attributes yet – "
-            "add at least one attribute, otherwise it cannot be used by "
-            "components.",
+            f"This {ENTITY_SECTIONS[section]} has neither attributes nor "
+            "commands – add at least one of them, otherwise it cannot be "
+            "used by components.",
             icon="⚠️",
         )
     if st.button(
@@ -290,7 +311,9 @@ def render_entity(section: str, index: int) -> None:
                 "encodapy.config.models.AttributeModel", "id_interface"
             ),
         )
-        if col_c.button("✕", key=f"{section}_{index}_attr{attr_idx}_del"):
+        if col_c.button(
+            "🗑️", key=f"{section}_{index}_attr{attr_idx}_del", type="primary"
+        ):
             attributes.pop(attr_idx)
             st.rerun()
     if section == "outputs":
@@ -322,7 +345,9 @@ def render_entity(section: str, index: int) -> None:
                     "encodapy.config.models.CommandModel", "id_interface"
                 ),
             )
-            if col_c.button("✕", key=f"{section}_{index}_cmd{cmd_idx}_del"):
+            if col_c.button(
+                "🗑️", key=f"{section}_{index}_cmd{cmd_idx}_del", type="primary"
+            ):
                 commands.pop(cmd_idx)
                 st.rerun()
 
@@ -332,12 +357,16 @@ def render_component(index: int) -> None:
     config = st.session_state["config"]
     components = config["controller_components"]
     component = components[index]
-    component["id"] = st.text_input(
+    col_id, col_del = st.columns([6, 1])
+    component["id"] = col_id.text_input(
         f"Component ID {index + 1}",
         value=component.get("id", ""),
         key=f"comp_{index}_id",
         help="Unique ID of the component within the controller.",
     )
+    if col_del.button("🗑️", key=f"comp_{index}_del", type="primary"):
+        components.pop(index)
+        st.rerun()
     options = component_type_options()
     current_type = component.get("type", "")
     type_options = [""] + options
@@ -356,9 +385,6 @@ def render_component(index: int) -> None:
         "'my_package.my_component') of a package installed in the "
         "environment.",
     )
-    if st.button("Remove component", key=f"comp_{index}_del"):
-        components.pop(index)
-        st.rerun()
     io = (
         _get_component_io_cached(component.get("type", ""))
         if component.get("type")
@@ -414,7 +440,9 @@ def render_component(index: int) -> None:
             if attribute_value and attribute_value not in attribute_options:
                 attribute_options.append(attribute_value)
             current["attribute"] = col_a.selectbox(
-                f"{field_name} → Attribute",
+                f"{field_name} → Attribute/Command"
+                if direction == "outputs"
+                else f"{field_name} → Attribute",
                 options=attribute_options,
                 index=attribute_options.index(attribute_value)
                 if attribute_value in attribute_options
@@ -644,12 +672,19 @@ def main() -> None:
             st.caption(f"{SECTION_DESCRIPTIONS[section]} {_model_docs_link(section)}")
             if st.button(f"+ Add {section[:-1]}", key=f"add_{section}"):
                 config[section].append({"id": "", "attributes": []})
+                st.session_state[f"open_{section}"] = len(config[section]) - 1
                 st.rerun()
+            open_index = st.session_state.get(f"open_{section}")
             for index in range(len(config[section])):
+                entity = config[section][index]
+                is_open = (
+                    index == open_index
+                    or len(config[section]) <= 2
+                    or (not entity.get("id") and not entity.get("attributes"))
+                )
                 with st.expander(
-                    f"{section[:-1]} {index + 1}: "
-                    f"{config[section][index].get('id', '?')}",
-                    expanded=len(config[section]) <= 2,
+                    f"{section[:-1]} {index + 1}: {entity.get('id', '?')}",
+                    expanded=is_open,
                 ):
                     render_entity(section, index)
 
@@ -664,13 +699,26 @@ def main() -> None:
         )
         if st.button("+ Add component", key="add_component"):
             config["controller_components"].append({"id": "", "type": ""})
+            st.session_state["open_component"] = (
+                len(config["controller_components"]) - 1
+            )
             st.rerun()
+        open_component = st.session_state.get("open_component")
         for index in range(len(config["controller_components"])):
+            is_open = index == open_component or (
+                not config["controller_components"][index].get("id")
+                and not config["controller_components"][index].get("type")
+            )
             with st.expander(
                 f"Component {index + 1}: "
-                f"{config['controller_components'][index].get('id', '?')}"
+                f"{config['controller_components'][index].get('id', '?')}",
+                expanded=is_open,
             ):
                 render_component(index)
+        if open_component is not None and open_component >= len(
+            config["controller_components"]
+        ):
+            st.session_state.pop("open_component", None)
 
     with tabs[5]:
         st.header("Controller Settings")
