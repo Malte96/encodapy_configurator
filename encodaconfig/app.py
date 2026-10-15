@@ -21,7 +21,11 @@ import streamlit as st
 from encodaconfig.check import check_configuration
 from encodaconfig.components import get_builtin_component_types, get_component_io
 from encodaconfig.env_requirements import generate_env_template, get_env_requirements
-from encodaconfig.external import register_zip
+from encodaconfig.external import (
+    find_component_types,
+    loaded_paths,
+    register_zip,
+)
 from encodapy.config.types import Interfaces
 from encodapy.utils.units import TimeUnits
 
@@ -229,11 +233,11 @@ def ensure_state() -> None:
 
 
 def component_type_options() -> list[str]:
-    """Selectable component types: built-in + loaded external packages."""
+    """Selectable component types: built-in + loaded external components."""
     options = get_builtin_component_types()
-    for package in st.session_state.get("ext_packages", []) or []:
-        if package not in options:
-            options.append(package)
+    for component_type in st.session_state.get("ext_component_types", []) or []:
+        if component_type not in options:
+            options.append(component_type)
     return options
 
 
@@ -635,7 +639,23 @@ def main() -> None:
                 st.session_state["ext_loaded_name"] = ext_upload.name
                 st.session_state["ext_packages"] = packages
                 _get_component_io_cached.clear()
-                st.success(f"Package loaded. Top-level packages: {', '.join(packages)}")
+                component_types = find_component_types(loaded_paths())
+                st.session_state["ext_component_types"] = component_types
+                if component_types:
+                    st.success(
+                        "Package loaded. Found component types: "
+                        + ", ".join(f"`{t}`" for t in component_types)
+                        + " – select them in the Components tab."
+                    )
+                else:
+                    st.warning(
+                        "Package loaded (top-level packages: "
+                        + ", ".join(packages)
+                        + "), but no components found. A component is a "
+                        "package directory with a `<name>_config.py` "
+                        "module containing `InputData`/`OutputData`/"
+                        "`ConfigData` subclasses."
+                    )
             except (zipfile.BadZipFile, OSError) as error:
                 st.error(f"Could not load the package: {error}")
 

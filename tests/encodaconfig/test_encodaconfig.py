@@ -328,3 +328,80 @@ class TestEnvRequirements:
         assert template.startswith("# .env template")
         assert "FIWARE_SERVICE=" in template  # required: uncommented
         assert "# MQTT_HOST=127.0.0.1" in template  # optional: commented
+
+
+class TestExternalComponentDetection:
+    """Tests for automatic detection of components in uploaded ZIPs."""
+
+    def _make_component_zip(self, tmp_path, valid: bool = True):
+        import zipfile
+
+        pkg = tmp_path / "local_controller_substation"
+        comp = pkg / "substation_controller"
+        comp.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (comp / "__init__.py").write_text("")
+        config_content = (
+            "from typing import Optional\n"
+            "from encodapy.components.basic_component_config import "
+            "ConfigData, InputData, OutputData\n"
+            "from encodapy.utils.datapoints import DataPointGeneral\n\n\n"
+            "class SubstationControllerInputData(InputData):\n"
+            "    current_value: DataPointGeneral\n\n\n"
+            "class SubstationControllerOutputData(OutputData):\n"
+            "    control_signal: Optional[DataPointGeneral] = None\n"
+        )
+        if valid:
+            (comp / "substation_controller_config.py").write_text(config_content)
+        zip_path = tmp_path / "substation.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.write(
+                pkg / "__init__.py", "local_controller_substation/__init__.py"
+            )
+            archive.write(
+                comp / "__init__.py",
+                "local_controller_substation/substation_controller/__init__.py",
+            )
+            if valid:
+                archive.write(
+                    comp / "substation_controller_config.py",
+                    "local_controller_substation/substation_controller/"
+                    "substation_controller_config.py",
+                )
+        return zip_path
+
+    def test_find_component_candidates(self, tmp_path):
+        from encodaconfig.external import (
+            find_component_candidates,
+            register_zip,
+            loaded_paths,
+        )
+
+        zip_path = self._make_component_zip(tmp_path)
+        register_zip(zip_path.read_bytes(), "substation.zip")
+        candidates = find_component_candidates(loaded_paths()[-1])
+        assert candidates == ["local_controller_substation.substation_controller"]
+
+    def test_find_component_types_verified(self, tmp_path):
+        from encodaconfig.external import (
+            find_component_types,
+            loaded_paths,
+            register_zip,
+        )
+
+        zip_path = self._make_component_zip(tmp_path)
+        register_zip(zip_path.read_bytes(), "substation.zip")
+        assert find_component_types(loaded_paths()) == [
+            "local_controller_substation.substation_controller"
+        ]
+
+    def test_no_components_found_for_plain_zip(self, tmp_path):
+        from encodaconfig.external import (
+            find_component_candidates,
+            register_zip,
+            loaded_paths,
+        )
+
+        zip_path = self._make_component_zip(tmp_path, valid=False)
+        register_zip(zip_path.read_bytes(), "plain.zip")
+        assert find_component_candidates(loaded_paths()[-1]) == []

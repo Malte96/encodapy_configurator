@@ -82,4 +82,69 @@ def loaded_paths() -> list[str]:
     return list(_loaded_paths)
 
 
-__all__ = ["list_packages", "loaded_paths", "register_zip"]
+def find_component_candidates(path_entry: str) -> list[str]:
+    """Find candidate component types in a directory (extracted ZIP).
+
+    A component is a package directory that contains a module named
+    ``<directory_name>_config.py`` (the schema used by the encodapy
+    component loader: type ``a.b.my_component`` resolves to the module
+    ``a.b.my_component.my_component_config``). The candidate type is
+    the dotted package path of that directory.
+
+    Args:
+        path_entry (str): Path added to ``sys.path``.
+
+    Returns:
+        list[str]: Dotted component type candidates (unverified).
+    """
+    root = Path(path_entry)
+    candidates = []
+    if root.is_file():
+        with zipfile.ZipFile(root) as archive:
+            directories = {
+                item.rsplit("/", 1)[0]
+                for item in archive.namelist()
+                if "/" in item and item.endswith(".py")
+            }
+            for directory in sorted(directories):
+                dir_name = directory.rsplit("/", 1)[-1]
+                if f"{directory}/{dir_name}_config.py" in archive.namelist():
+                    candidates.append(directory.replace("/", "."))
+            return candidates
+    for config_file in sorted(root.rglob("*_config.py")):
+        directory = config_file.parent
+        if config_file.name == f"{directory.name}_config.py":
+            relative = directory.relative_to(root)
+            if relative.parts:
+                candidates.append(".".join(relative.parts))
+    return candidates
+
+
+def find_component_types(path_entries: list[str]) -> list[str]:
+    """Find and verify component types in the registered paths.
+
+    Args:
+        path_entries (list[str]): Paths registered via
+        :func:`register_zip`.
+
+    Returns:
+        list[str]: Dotted component types that could be imported and
+        resolved (via the encodapy component loader).
+    """
+    from encodaconfig.components import get_component_io  # pylint: disable=import-outside-toplevel
+
+    verified = []
+    for path_entry in path_entries:
+        for candidate in find_component_candidates(path_entry):
+            if candidate and get_component_io(candidate) is not None:
+                verified.append(candidate)
+    return sorted(set(verified))
+
+
+__all__ = [
+    "find_component_candidates",
+    "find_component_types",
+    "list_packages",
+    "loaded_paths",
+    "register_zip",
+]
