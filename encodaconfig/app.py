@@ -271,7 +271,7 @@ def render_entity(section: str, index: int) -> None:
         help=_model_field_help(model_path, "interface"),
     )
     if col_col.button(
-        "🗑️ Delete",
+        "Delete",
         key=f"{section}_{index}_del",
         type="primary",
     ):
@@ -316,7 +316,7 @@ def render_entity(section: str, index: int) -> None:
             ),
         )
         if col_c.button(
-            "🗑️", key=f"{section}_{index}_attr{attr_idx}_del", type="primary"
+            "Delete", key=f"{section}_{index}_attr{attr_idx}_del", type="primary"
         ):
             attributes.pop(attr_idx)
             st.rerun()
@@ -350,7 +350,7 @@ def render_entity(section: str, index: int) -> None:
                 ),
             )
             if col_c.button(
-                "🗑️", key=f"{section}_{index}_cmd{cmd_idx}_del", type="primary"
+                "Delete", key=f"{section}_{index}_cmd{cmd_idx}_del", type="primary"
             ):
                 commands.pop(cmd_idx)
                 st.rerun()
@@ -631,16 +631,24 @@ def main() -> None:
             type=["zip", "whl"],
             key="ext_upload",
         )
-        if ext_upload is not None and ext_upload.name != st.session_state.get(
-            "ext_loaded_name"
+        ext_upload_id = (
+            f"{ext_upload.name}:{len(ext_upload.getvalue())}"
+            if ext_upload is not None
+            else None
+        )
+        if ext_upload is not None and ext_upload_id != st.session_state.get(
+            "ext_loaded_id"
         ):
             try:
                 packages = register_zip(ext_upload.getvalue(), ext_upload.name)
-                st.session_state["ext_loaded_name"] = ext_upload.name
+                st.session_state["ext_loaded_id"] = ext_upload_id
                 st.session_state["ext_packages"] = packages
                 _get_component_io_cached.clear()
                 component_types = find_component_types(loaded_paths())
-                st.session_state["ext_component_types"] = component_types
+                previous_types = st.session_state.get("ext_component_types", []) or []
+                st.session_state["ext_component_types"] = sorted(
+                    set(previous_types) | set(component_types)
+                )
                 if component_types:
                     st.success(
                         "Package loaded. Found component types: "
@@ -658,6 +666,11 @@ def main() -> None:
                     )
             except (zipfile.BadZipFile, OSError) as error:
                 st.error(f"Could not load the package: {error}")
+        if st.session_state.get("ext_component_types"):
+            st.caption(
+                "Loaded component types: "
+                + ", ".join(f"`{t}`" for t in st.session_state["ext_component_types"])
+            )
 
     tabs = st.tabs(
         [
