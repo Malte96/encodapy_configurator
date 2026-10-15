@@ -24,6 +24,7 @@ from encodaconfig.env_requirements import generate_env_template, get_env_require
 from encodaconfig.external import (
     inspect_component_types,
     loaded_paths,
+    purge_external_modules,
     register_zip,
 )
 from encodapy.config.types import Interfaces
@@ -402,12 +403,24 @@ def render_component(index: int) -> None:
     )
     if io is None:
         if component.get("type"):
-            st.warning(
-                f"Component type '{component['type']}' not found "
-                "(module not importable or wrong name). External "
-                "components must be installed as a package or loaded via "
-                "ZIP/wheel in the sidebar."
-            )
+            ext_errors = st.session_state.get("ext_load_errors", {}) or {}
+            if component["type"] in ext_errors:
+                st.warning(
+                    f"Component type '{component['type']}' could not be "
+                    "loaded previously:\n\n" + ext_errors[component["type"]]
+                )
+                if st.button("Retry import", key=f"comp_{index}_retry"):
+                    purge_external_modules()
+                    _get_component_io_cached.clear()
+                    st.session_state["ext_load_errors"] = {}
+                    st.rerun()
+            else:
+                st.warning(
+                    f"Component type '{component['type']}' not found "
+                    "(module not importable or wrong name). External "
+                    "components must be installed as a package or loaded "
+                    "via ZIP/wheel in the sidebar."
+                )
         return
     st.success(
         f"✅ Component recognized – {len(io['inputs'])} inputs, "
@@ -644,6 +657,7 @@ def main() -> None:
         ):
             try:
                 packages = register_zip(ext_upload.getvalue(), ext_upload.name)
+                purge_external_modules()
                 st.session_state["ext_loaded_id"] = ext_upload_id
                 st.session_state["ext_packages"] = packages
                 _get_component_io_cached.clear()
@@ -721,6 +735,14 @@ def main() -> None:
                 "Loaded component types: "
                 + ", ".join(f"`{t}`" for t in st.session_state["ext_component_types"])
             )
+        if st.session_state.get("ext_load_errors") and st.button(
+            "Re-check failed components"
+        ):
+            purge_external_modules()
+            st.session_state.pop("ext_load_errors", None)
+            st.session_state["ext_loaded_id"] = None
+            _get_component_io_cached.clear()
+            st.rerun()
 
     tabs = st.tabs(
         [

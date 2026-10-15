@@ -39,15 +39,73 @@ def register_zip(archive_bytes: bytes, name: str) -> list[str]:
         temp_file = Path(tempfile.gettempdir()) / f"encodaconfig_{name}"
         temp_file.write_bytes(archive_bytes)
         path_entry = str(temp_file)
-    else:
-        temp_dir = Path(tempfile.mkdtemp(prefix="encodaconfig_ext_"))
-        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-            archive.extractall(temp_dir)
-        path_entry = str(temp_dir)
+        _add_path_entry(path_entry)
+        return list_packages(path_entry)
+    temp_dir = Path(tempfile.mkdtemp(prefix="encodaconfig_ext_"))
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        archive.extractall(temp_dir)
+    _add_path_entry(str(temp_dir))
+    top_dirs = [
+        entry
+        for entry in temp_dir.iterdir()
+        if entry.is_dir() and not entry.name.startswith(("_", "."))
+    ]
+    if len(top_dirs) == 1 and any(
+        (top_dirs[0] / marker).exists()
+        for marker in ("pyproject.toml", "setup.py", "setup.cfg")
+    ):
+        nested_root = str(top_dirs[0])
+        _add_path_entry(nested_root)
+        return list_packages(nested_root)
+    return list_packages(str(temp_dir))
+
+
+def _add_path_entry(path_entry: str) -> None:
+    """Add a path entry to sys.path and the registry (idempotent)."""
     if path_entry not in sys.path:
         sys.path.insert(0, path_entry)
+    if path_entry not in _loaded_paths:
         _loaded_paths.append(path_entry)
-    return list_packages(path_entry)
+
+
+def purge_external_modules() -> list[str]:
+    """Remove all previously imported external modules from sys.modules.
+
+    Python caches failed imports in ``sys.modules`` (as None entries) and
+    successful imports under the same name. When a utility package is
+    loaded *after* a component import failed, the cached failure would
+    keep blocking the import forever ("stuck" state). Removing the
+    external modules forces a fresh import on the next access, now with
+    the complete ``sys.path``.
+
+    Returns:
+        list[str]: The removed module names.
+    """
+    external_roots = [
+        Path(entry).resolve().name
+        for entry in list(_loaded_paths)
+        if Path(entry).is_dir()
+    ]
+    removed = []
+    for module_name in list(sys.modules):
+        root = module_name.split(".")[0]
+        if root in external_roots or any(
+            module_name.startswith(f"{package}.") for package in list_packages_safe()
+        ):
+            del sys.modules[module_name]
+            removed.append(module_name)
+    return removed
+
+
+def list_packages_safe() -> list[str]:
+    """List all top-level packages across all registered directories."""
+    packages: list[str] = []
+    for entry in _loaded_paths:
+        if Path(entry).is_dir():
+            for item in Path(entry).iterdir():
+                if item.is_dir() and (item / "__init__.py").exists():
+                    packages.append(item.name)
+    return packages
 
 
 def list_packages(path_entry: str) -> list[str]:
@@ -200,6 +258,8 @@ __all__ = [
     "find_component_types",
     "inspect_component_types",
     "list_packages",
+    "list_packages_safe",
     "loaded_paths",
+    "purge_external_modules",
     "register_zip",
 ]
