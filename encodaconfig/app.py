@@ -12,6 +12,7 @@ and is not connected to a running EnCoDaPy service.
 """
 
 import json
+import re
 import zipfile
 from typing import Any
 
@@ -95,19 +96,82 @@ def _model_field_help(model_path: str, field_name: str) -> str | None:
         field = model_class.model_fields.get(field_name)
     except (ImportError, AttributeError):
         return None
-    if field is None:
-        return None
+    description = (field.description or "").strip() if field is not None else ""
+    docstring_description = _docstring_field_description(model_path, field_name)
+    text = description or docstring_description
+    return text if text else None
+
+
+def _field_docs_link(model_path: str) -> str:
+    """Clickable markdown docs link for a model class (for captions)."""
+    class_name = model_path.rsplit(".", 1)[-1]
     class_anchor = f"encodapy.{model_path.split('encodapy.', 1)[-1]}"
-    docs_link = f"{DOCS_MODEL_URL}#{class_anchor}"
-    description = (field.description or "").strip()
-    link_text = f"[Docs: {class_name}]({docs_link})"
-    return f"{description}\n\n{link_text}" if description else link_text
+    return f"📖 [Docs: {class_name}]({DOCS_MODEL_URL}#{class_anchor})"
+
+
+MODEL_LINK_LABELS = {
+    "interfaces": "InterfaceModel",
+    "inputs": "InputModel",
+    "staticdata": "StaticDataModel",
+    "outputs": "OutputModel",
+    "attributes": "AttributeModel",
+    "commands": "CommandModel",
+    "components": "ControllerComponentModel",
+    "settings": "ControllerSettingModel",
+    "calculation": "TimeSettingsCalculationModel",
+    "env": "env_values",
+}
 
 
 @st.cache_data(show_spinner=False)
 def _model_docs_link(section: str) -> str:
-    """Docs link (config_models.html anchor) for a config section."""
-    return DOCS_MODEL_SECTIONS.get(section, DOCS_MODEL_URL)
+    """Markdown docs link (config_models.html anchor) for a config section."""
+    url = DOCS_MODEL_SECTIONS.get(section, DOCS_MODEL_URL)
+    label = MODEL_LINK_LABELS.get(section, section)
+    return f"📖 [Docs: {label}]({url})"
+
+
+@st.cache_data(show_spinner=False)
+def _docstring_field_description(model_path: str, field_name: str) -> str:
+    """Extract the field description from the model class docstring.
+
+    The EnCoDaPy models document their fields in the Google-style
+    'Attributes:' section of the class docstring (not via
+    Field(description=...)). This parser extracts the description for
+    a single field from there.
+
+    Args:
+        model_path (str): Import path of the model class.
+        field_name (str): Name of the field.
+
+    Returns:
+        str: The description or an empty string.
+    """
+    try:
+        module_name, class_name = model_path.rsplit(".", 1)
+        module = __import__(module_name, fromlist=[class_name])
+        model_class = getattr(module, class_name)
+        docstring = model_class.__doc__ or ""
+    except (ImportError, AttributeError):
+        return ""
+    attributes = docstring.split("Attributes:", 1)
+    if len(attributes) < 2:
+        return ""
+    pattern = re.compile(r"^\s+(" + re.escape(field_name) + r")\s*\([^)]*\):\s*(.+)$")
+    lines = attributes[1].split("\n")
+    for idx, line in enumerate(lines):
+        match = pattern.match(line)
+        if match:
+            description = match.group(2).strip()
+            for cont in lines[idx + 1 :]:
+                if cont.strip() and not cont.strip().startswith(
+                    tuple("abcdefghijklmnopqrstuvwxyz_")
+                ):
+                    description += " " + cont.strip().rstrip("\\")
+                else:
+                    break
+            return " ".join(description.split())
+    return ""
 
 
 def new_config() -> dict[str, Any]:
@@ -195,7 +259,15 @@ def render_entity(section: str, index: int) -> None:
         key=f"{section}_{index}_idiface",
         help=_model_field_help(model_path, "id_interface"),
     )
+    st.caption(_field_docs_link(model_path))
     attributes = entity.setdefault("attributes", [])
+    if not attributes:
+        st.warning(
+            f"⚠️ This {ENTITY_SECTIONS[section]} has no attributes yet – "
+            "add at least one attribute, otherwise it cannot be used by "
+            "components.",
+            icon="⚠️",
+        )
     if st.button(
         f"+ Add attribute ({entity['id'] or section})",
         key=f"{section}_{index}_addattr",
@@ -306,8 +378,9 @@ def render_component(index: int) -> None:
         f"{len(io['outputs'])} outputs, {len(io['config'])} config fields."
     )
     st.caption(
-        "Map each field to an entity + attribute from your inputs/"
-        "staticdata/outputs (dropdowns). Optional fields may stay empty – "
+        "Map each field to an entity + attribute/command from your inputs/"
+        "staticdata/outputs (dropdowns). Output fields can also reference "
+        "commands defined on an output. Optional fields may stay empty – "
         "they are then omitted from the configuration."
     )
     for direction in ["inputs", "outputs"]:
@@ -423,6 +496,9 @@ def datapoint_options(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
             for attribute in entity.get("attributes", []) or []:
                 if attribute.get("id"):
                     entry["attributes"].setdefault(attribute["id"], section)
+            for command in entity.get("commands", []) or []:
+                if command.get("id"):
+                    entry["attributes"].setdefault(command["id"], section)
     return options
 
 
