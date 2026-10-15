@@ -120,6 +120,45 @@ def find_component_candidates(path_entry: str) -> list[str]:
     return candidates
 
 
+def inspect_component_types(path_entries: list[str]) -> dict[str, str | None]:
+    """Inspect all component candidates in the registered paths.
+
+    Unlike :func:`find_component_types`, this returns every candidate
+    with the reason why it could not be verified (or None if valid), so
+    problems like failed imports (missing dependencies) or missing
+    model classes become visible to the user.
+
+    Args:
+        path_entries (list[str]): Paths registered via
+        :func:`register_zip`.
+
+    Returns:
+        dict[str, str | None]: Mapping of dotted component type to an
+        error message (None = valid and usable).
+    """
+    from encodaconfig.components import get_component_io  # pylint: disable=import-outside-toplevel
+
+    inspected: dict[str, str | None] = {}
+    for path_entry in path_entries:
+        for candidate in find_component_candidates(path_entry):
+            if not candidate:
+                continue
+            try:
+                io = get_component_io(candidate)
+            except (AttributeError, ImportError, KeyError, TypeError) as error:
+                inspected[candidate] = f"import failed: {error}"
+                continue
+            if io is None:
+                inspected[candidate] = (
+                    "could not be resolved by the component loader "
+                    "(check the `<name>_config.py` module and its "
+                    "InputData/OutputData/ConfigData classes)"
+                )
+            else:
+                inspected[candidate] = None
+    return dict(sorted(inspected.items()))
+
+
 def find_component_types(path_entries: list[str]) -> list[str]:
     """Find and verify component types in the registered paths.
 
@@ -131,19 +170,14 @@ def find_component_types(path_entries: list[str]) -> list[str]:
         list[str]: Dotted component types that could be imported and
         resolved (via the encodapy component loader).
     """
-    from encodaconfig.components import get_component_io  # pylint: disable=import-outside-toplevel
-
-    verified = []
-    for path_entry in path_entries:
-        for candidate in find_component_candidates(path_entry):
-            if candidate and get_component_io(candidate) is not None:
-                verified.append(candidate)
-    return sorted(set(verified))
+    inspected = inspect_component_types(path_entries)
+    return sorted(candidate for candidate, error in inspected.items() if error is None)
 
 
 __all__ = [
     "find_component_candidates",
     "find_component_types",
+    "inspect_component_types",
     "list_packages",
     "loaded_paths",
     "register_zip",

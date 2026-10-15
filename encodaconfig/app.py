@@ -22,7 +22,7 @@ from encodaconfig.check import check_configuration
 from encodaconfig.components import get_builtin_component_types, get_component_io
 from encodaconfig.env_requirements import generate_env_template, get_env_requirements
 from encodaconfig.external import (
-    find_component_types,
+    inspect_component_types,
     loaded_paths,
     register_zip,
 )
@@ -38,9 +38,15 @@ _DANGER_BUTTON_CSS = """
     background-color: #dc3545;
     color: #ffffff;
     border: 1px solid #b02a37;
+    font-family: "Source Sans Pro", "Segoe UI Emoji", "Noto Color Emoji",
+        "Apple Color Emoji", sans-serif;
 }
 .stButton > button[kind="primary"]:hover {
     background-color: #c82333;
+    color: #ffffff;
+}
+.stButton > button[kind="primary"]:focus {
+    background-color: #b02a37;
     color: #ffffff;
 }
 </style>
@@ -271,7 +277,7 @@ def render_entity(section: str, index: int) -> None:
         help=_model_field_help(model_path, "interface"),
     )
     if col_col.button(
-        "Delete",
+        "🗑 Delete",
         key=f"{section}_{index}_del",
         type="primary",
     ):
@@ -316,7 +322,7 @@ def render_entity(section: str, index: int) -> None:
             ),
         )
         if col_c.button(
-            "Delete", key=f"{section}_{index}_attr{attr_idx}_del", type="primary"
+            "🗑", key=f"{section}_{index}_attr{attr_idx}_del", type="primary"
         ):
             attributes.pop(attr_idx)
             st.rerun()
@@ -350,7 +356,7 @@ def render_entity(section: str, index: int) -> None:
                 ),
             )
             if col_c.button(
-                "Delete", key=f"{section}_{index}_cmd{cmd_idx}_del", type="primary"
+                "🗑", key=f"{section}_{index}_cmd{cmd_idx}_del", type="primary"
             ):
                 commands.pop(cmd_idx)
                 st.rerun()
@@ -644,11 +650,20 @@ def main() -> None:
                 st.session_state["ext_loaded_id"] = ext_upload_id
                 st.session_state["ext_packages"] = packages
                 _get_component_io_cached.clear()
-                component_types = find_component_types(loaded_paths())
+                inspected = inspect_component_types(loaded_paths())
+                component_types = sorted(
+                    candidate for candidate, error in inspected.items() if error is None
+                )
+                failed = {
+                    candidate: error
+                    for candidate, error in inspected.items()
+                    if error is not None
+                }
                 previous_types = st.session_state.get("ext_component_types", []) or []
                 st.session_state["ext_component_types"] = sorted(
                     set(previous_types) | set(component_types)
                 )
+                st.session_state["ext_failed_types"] = failed
                 if component_types:
                     st.success(
                         "Package loaded. Found component types: "
@@ -659,11 +674,17 @@ def main() -> None:
                     st.warning(
                         "Package loaded (top-level packages: "
                         + ", ".join(packages)
-                        + "), but no components found. A component is a "
-                        "package directory with a `<name>_config.py` "
+                        + "), but no usable components found. A component "
+                        "is a package directory with a `<name>_config.py` "
                         "module containing `InputData`/`OutputData`/"
                         "`ConfigData` subclasses."
                     )
+                if failed:
+                    st.warning(
+                        f"{len(failed)} component candidate(s) could not be loaded:"
+                    )
+                    for candidate, error in failed.items():
+                        st.markdown(f"- `{candidate}`: {error}")
             except (zipfile.BadZipFile, OSError) as error:
                 st.error(f"Could not load the package: {error}")
         if st.session_state.get("ext_component_types"):
