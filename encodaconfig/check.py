@@ -5,14 +5,13 @@ available and consistent with the other configuration parts), similar to
 the checks performed when the components are started.
 """
 
-from typing import Any, Dict, List
-
+from typing import Any
 
 from encodaconfig.components import get_component_io
 from encodaconfig.validation import validate_config
 
 
-def _index_datapoints(config: Dict[str, Any]) -> Dict[str, Dict[str, List[str]]]:
+def _index_datapoints(config: dict[str, Any]) -> dict[str, dict[str, list[str]]]:
     """Index the entity/attribute pairs defined in the configuration.
 
     Args:
@@ -23,7 +22,7 @@ def _index_datapoints(config: Dict[str, Any]) -> Dict[str, Dict[str, List[str]]]
         entity_id -> attribute_id -> list of section names
         ("input", "staticdata", "output").
     """
-    index: Dict[str, Dict[str, List[str]]] = {}
+    index: dict[str, dict[str, list[str]]] = {}
     for section, label in [
         ("inputs", "input"),
         ("staticdata", "staticdata"),
@@ -39,7 +38,7 @@ def _index_datapoints(config: Dict[str, Any]) -> Dict[str, Dict[str, List[str]]]
     return index
 
 
-def check_component_wiring(config_data: Dict[str, Any]) -> List[Dict[str, str]]:
+def check_component_wiring(config_data: dict[str, Any]) -> list[dict[str, str]]:
     """Check that the component IO allocations match the configuration.
 
     For every controller component the expected inputs and outputs are
@@ -54,7 +53,7 @@ def check_component_wiring(config_data: Dict[str, Any]) -> List[Dict[str, str]]:
         List[Dict[str, str]]: List of issues, each with ``component``,
         ``field``, ``direction`` and ``msg``.
     """
-    issues: List[Dict[str, str]] = []
+    issues: list[dict[str, str]] = []
     index = _index_datapoints(config_data)
 
     for component in config_data.get("controller_components", []) or []:
@@ -120,7 +119,7 @@ def check_component_wiring(config_data: Dict[str, Any]) -> List[Dict[str, str]]:
     return issues
 
 
-def check_configuration(config_data: Dict[str, Any]) -> Dict[str, Any]:
+def check_configuration(config_data: dict[str, Any]) -> dict[str, Any]:
     """Run the full check: model validation and component wiring.
 
     Args:
@@ -139,4 +138,4 @@ def check_configuration(config_data: Dict[str, Any]) -> Dict[str, Any]:
     return report
 
 
-__all__ = ["check_configuration", "check_component_wiring", "_index_datapoints"]
+__all__ = ["_index_datapoints", "check_component_wiring", "check_configuration"]

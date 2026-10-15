@@ -18,16 +18,16 @@ Main entry points:
 - ``streamlit run encodaconfig/app.py`` - the web UI
 """
 
-from encodaconfig.validation import validate_config
+from encodaconfig.check import check_configuration
 from encodaconfig.components import (
     get_builtin_component_types,
     get_component_io,
 )
-from encodaconfig.check import check_configuration
+from encodaconfig.validation import validate_config
 
 __all__ = [
-    "validate_config",
+    "check_configuration",
     "get_builtin_component_types",
     "get_component_io",
-    "check_configuration",
+    "validate_config",
 ]

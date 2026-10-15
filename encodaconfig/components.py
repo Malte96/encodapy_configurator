@@ -8,18 +8,17 @@ components are addressed with a dotted path type
 """
 
 import pkgutil
+from typing import Any
 
 import encodapy.components
-from typing import Any, Dict, List, Optional
-
+from encodapy.components.basic_component_config import ConfigData, InputData, OutputData
 from encodapy.components.component_loader import (
     check_component_type,
     get_component_data_model,
 )
-from encodapy.components.basic_component_config import ConfigData, InputData, OutputData
 
 
-def get_builtin_component_types() -> List[str]:
+def get_builtin_component_types() -> list[str]:
     """List the component types shipped with encodapy.
 
     Returns:
@@ -33,7 +32,7 @@ def get_builtin_component_types() -> List[str]:
     )
 
 
-def get_component_io(component_type: str) -> Optional[Dict[str, Any]]:
+def get_component_io(component_type: str) -> dict[str, Any] | None:
     """Get the expected inputs and outputs of a component type.
 
     Uses the same loader functions as the component start, so the result
@@ -70,7 +69,7 @@ def get_component_io(component_type: str) -> Optional[Dict[str, Any]]:
             for name, field in model.model_fields.items()
         }
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "available": True,
         "inputs": {},
         "outputs": {},
@@ -94,4 +93,4 @@ def _safe_data_model(component_type: str, subname: str, base):
         return None
 
 
-__all__ = ["get_builtin_component_types", "get_component_io", "check_component_type"]
+__all__ = ["check_component_type", "get_builtin_component_types", "get_component_io"]

@@ -61,11 +61,11 @@ Hauptpaket automatisch im Tool verfügbar, ohne zusätzliche Anpassungen:
 from encodaconfig import check_configuration, get_component_io, validate_config
 
 report = check_configuration(config_dict)
-report["valid"]          # Gesamturteil
-report["errors"]         # Modellfehler (Pfad + Meldung)
+report["valid"]  # Gesamturteil
+report["errors"]  # Modellfehler (Pfad + Meldung)
 report["wiring_issues"]  # Komponenten-IO-Probleme (Entity/Attribute fehlen,
-                         # erforderliche Inputs nicht zugeordnet,
-                         # unerwartete Zuordnungen, unbekannter Typ)
+# erforderliche Inputs nicht zugeordnet,
+# unerwartete Zuordnungen, unbekannter Typ)
 ```
 
 `get_component_io("two_point_controller")` liefert die erwarteten

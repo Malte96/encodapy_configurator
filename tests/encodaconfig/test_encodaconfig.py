@@ -7,7 +7,6 @@ and no Streamlit runtime is required.
 import json
 from pathlib import Path
 
-
 from encodaconfig import (
     check_configuration,
     get_builtin_component_types,
@@ -278,3 +277,24 @@ class TestStreamlitAppImportable:
         import streamlit  # noqa: F401  # ensures the dependency is installed
 
         from encodaconfig import app  # noqa: F401  # import must not execute the UI
+
+
+class TestExternalComponents:
+    """Tests for runtime registration of external component packages."""
+
+    def test_register_zip(self, tmp_path):
+        import zipfile
+
+        from encodaconfig.external import loaded_paths, register_zip
+
+        pkg_dir = tmp_path / "bspw_pkg"
+        (pkg_dir / "sub").mkdir(parents=True)
+        (pkg_dir / "__init__.py").write_text("")
+        (pkg_dir / "sub" / "__init__.py").write_text("")
+        zip_path = tmp_path / "pkg.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.write(pkg_dir / "__init__.py", "bspw_pkg/__init__.py")
+            archive.write(pkg_dir / "sub" / "__init__.py", "bspw_pkg/sub/__init__.py")
+        packages = register_zip(zip_path.read_bytes(), "pkg.zip")
+        assert "bspw_pkg" in packages
+        assert any("encodaconfig_ext_" in p for p in loaded_paths())

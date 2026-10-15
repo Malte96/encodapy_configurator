@@ -6,7 +6,7 @@ No additional validation logic is implemented here: the models in
 behavior is identical to the service start.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -14,7 +14,7 @@ from encodapy.config.models import ConfigModel
 from encodapy.utils.error_handling import ConfigError, InterfaceNotActive
 
 
-def validate_config(config_data: Dict[str, Any]) -> Dict[str, Any]:
+def validate_config(config_data: dict[str, Any]) -> dict[str, Any]:
     """Validate a configuration dictionary against `ConfigModel`.
 
     Args:
@@ -51,7 +51,7 @@ def validate_config(config_data: Dict[str, Any]) -> Dict[str, Any]:
     return {"valid": True, "errors": [], "model": model}
 
 
-def validate_config_file(file_path: str) -> Dict[str, Any]:
+def validate_config_file(file_path: str) -> dict[str, Any]:
     """Load and validate a configuration JSON file.
 
     Args:
@@ -77,7 +77,7 @@ def validate_config_file(file_path: str) -> Dict[str, Any]:
     return report
 
 
-def format_errors(errors: List[Dict[str, str]]) -> str:
+def format_errors(errors: list[dict[str, str]]) -> str:
     """Format a list of errors (as produced by :func:`validate_config`)
     into a human readable multi-line string.
 
@@ -90,4 +90,4 @@ def format_errors(errors: List[Dict[str, str]]) -> str:
     return "\n".join(f"[{err['loc']}] {err['msg']}" for err in errors)
 
 
-__all__ = ["validate_config", "validate_config_file", "format_errors", "ConfigError"]
+__all__ = ["ConfigError", "format_errors", "validate_config", "validate_config_file"]
