@@ -30,8 +30,19 @@ def _index_datapoints(config: dict[str, Any]) -> dict[str, dict[str, list[str]]]
     ]:
         for entity in config.get(section, []) or []:
             entity_id = entity.get("id")
+            if not entity_id:
+                continue
             for attribute in entity.get("attributes", []) or []:
                 attribute_id = attribute.get("id")
+                if not attribute_id:
+                    continue
+                index.setdefault(entity_id, {}).setdefault(attribute_id, []).append(
+                    label
+                )
+            for command in entity.get("commands", []) or []:
+                attribute_id = command.get("id")
+                if not attribute_id:
+                    continue
                 index.setdefault(entity_id, {}).setdefault(attribute_id, []).append(
                     label
                 )
@@ -94,6 +105,18 @@ def check_component_wiring(config_data: dict[str, Any]) -> list[dict[str, str]]:
                 allocation = allocated[field_name]
                 entity_id = allocation.get("entity")
                 attribute_id = allocation.get("attribute")
+                if not entity_id or not attribute_id:
+                    if field_info["required"]:
+                        issues.append(
+                            {
+                                "component": component_id,
+                                "field": field_name,
+                                "direction": direction,
+                                "msg": f"Required {direction[:-1]} '{field_name}' "
+                                "is not allocated yet.",
+                            }
+                        )
+                    continue
                 sections = index.get(entity_id, {}).get(attribute_id)
                 if sections is None:
                     issues.append(

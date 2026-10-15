@@ -431,3 +431,49 @@ class TestEmptyComponentType:
         assert check_component_wiring(config) == []
         report = check_configuration(config)
         assert report["wiring_issues"] == []
+
+
+class TestMidEditTolerance:
+    """Half-filled forms must not produce misleading wiring issues."""
+
+    def test_empty_allocations_reported_as_not_allocated(self):
+        from encodaconfig.check import check_component_wiring
+
+        config = {
+            "inputs": [{"id": "", "interface": "fiware", "attributes": []}],
+            "outputs": [],
+            "staticdata": [],
+            "controller_components": [
+                {
+                    "id": "c1",
+                    "type": "two_point_controller",
+                    "inputs": {
+                        "current_value": {"entity": "", "attribute": ""},
+                        "latest_control_signal": {
+                            "entity": "",
+                            "attribute": "",
+                        },
+                    },
+                    "outputs": {"control_signal": {"entity": "", "attribute": ""}},
+                }
+            ],
+        }
+        issues = check_component_wiring(config)
+        assert all("not allocated yet" in issue["msg"] for issue in issues)
+        assert all("not defined in" not in issue["msg"] for issue in issues)
+
+    def test_empty_entity_ids_not_indexed(self):
+        from encodaconfig.check import _index_datapoints
+
+        index = _index_datapoints(
+            {
+                "inputs": [
+                    {
+                        "id": "",
+                        "interface": "fiware",
+                        "attributes": [{"id": ""}],
+                    }
+                ]
+            }
+        )
+        assert index == {}
