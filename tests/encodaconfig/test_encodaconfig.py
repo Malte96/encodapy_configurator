@@ -405,3 +405,29 @@ class TestExternalComponentDetection:
         zip_path = self._make_component_zip(tmp_path, valid=False)
         register_zip(zip_path.read_bytes(), "plain.zip")
         assert find_component_candidates(loaded_paths()[-1]) == []
+
+
+class TestEmptyComponentType:
+    """Newly added components have an empty type and must not trigger
+    loader lookups or issues."""
+
+    def test_empty_type_component_is_skipped(self):
+        from encodaconfig.check import check_component_wiring
+        from encodaconfig import check_configuration
+
+        config = {
+            "interfaces": {"mqtt": False, "fiware": True, "file": False},
+            "inputs": [],
+            "outputs": [],
+            "staticdata": [],
+            "controller_components": [
+                {"id": "new_comp", "type": ""},
+                {"id": "", "type": ""},
+            ],
+            "controller_settings": {
+                "time_settings": {"calculation": {"timerange": 60}}
+            },
+        }
+        assert check_component_wiring(config) == []
+        report = check_configuration(config)
+        assert report["wiring_issues"] == []

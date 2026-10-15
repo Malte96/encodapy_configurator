@@ -58,7 +58,9 @@ def check_component_wiring(config_data: dict[str, Any]) -> list[dict[str, str]]:
 
     for component in config_data.get("controller_components", []) or []:
         component_id = component.get("id", "<unknown>")
-        component_type = component.get("type", "<unknown>")
+        component_type = component.get("type", "")
+        if not component_type:
+            continue
         io = get_component_io(component_type)
         if io is None:
             issues.append(
