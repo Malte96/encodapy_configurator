@@ -107,6 +107,47 @@ non-installed/external types `None` is returned.
   without writing to the environment. Loading code from URLs is
   deliberately not supported for security and reproducibility reasons.
 
+#### Loading external components from ZIP archives
+
+A component package follows the encodapy loader schema: the component
+`type` is the dotted package path, and the package directory must contain
+a `<name>_config.py` module with the `InputData`/`OutputData` (and
+optionally `ConfigData`) classes:
+
+```
+local_controller_substation/          <- top-level package
+├── __init__.py
+├── substation_controller/
+│   ├── __init__.py
+│   └── substation_controller_config.py   (SubstationControllerInputData, ...)
+├── substation_simulation_output/
+│   ├── __init__.py
+│   └── substation_simulation_output_config.py
+└── substation_thermal_storage/
+    ├── __init__.py
+    └── substation_thermal_storage_config.py
+```
+
+Uploading the ZIP of this package automatically detects all components
+and offers them in the component type selection (e.g.
+`local_controller_substation.substation_controller`). The verification
+is done with the same component loader functions as at service start.
+
+**Shared utility packages:** if the components import modules from a
+shared package (e.g. `common_models` or `common_tools`), upload the ZIP
+of that utility package **first**:
+
+1. Upload `common_tools.zip` → the tool reports "No components found",
+   which is fine: the modules are now importable for this session.
+2. Upload the component package ZIP → its components can now import
+   `common_models`/`common_tools` and are detected.
+
+Modules uploaded earlier stay importable for all following imports
+within the session. Public packages (e.g. `pandas`) must be installed in
+the environment instead. If a component cannot be loaded, the tool
+shows a toast notification and an error detail box per candidate with
+the concrete import error and a hint about this upload order.
+
 ### Export
 
 No static storage: the configuration lives in the session state of the

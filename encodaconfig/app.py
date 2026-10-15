@@ -624,13 +624,10 @@ def main() -> None:
         st.divider()
         st.markdown("#### External components")
         st.caption(
-            "**Option 1 (recommended, as at service start):** install the "
-            "package in the environment (`pip install "
-            "bspw_package_components_example`) and enter the type as "
-            "dotted path.\n\n"
-            "**Option 2:** upload the ZIP/wheel of the package – it is "
-            "made importable for this session (no writes to the "
-            "environment)."
+            "Install the package in the environment (recommended, as at "
+            "service start) **or** upload its ZIP/wheel here – it is "
+            "made importable for this session. Details: see the "
+            "encodaconfig README."
         )
         ext_upload = st.file_uploader(
             "ZIP or wheel of a component package",
@@ -703,6 +700,20 @@ def main() -> None:
                     with st.expander("Error details", expanded=True):
                         for candidate, error in failed.items():
                             st.markdown(f"- `{candidate}`: {error}")
+                    if any(
+                        "No module named" in (error or "") for error in failed.values()
+                    ):
+                        st.info(
+                            "**Hint:** if a required module is missing "
+                            "(e.g. a shared `common_models`/`common_tools` "
+                            "package), upload the ZIP of that utility "
+                            "package **first** and then upload the component "
+                            "ZIP again – modules loaded earlier stay "
+                            "importable for all following imports. If the "
+                            "missing module is a public package (e.g. "
+                            "`pandas`), install it in the environment "
+                            "instead."
+                        )
             except (zipfile.BadZipFile, OSError) as error:
                 st.error(f"Could not load the package: {error}")
         if st.session_state.get("ext_component_types"):
