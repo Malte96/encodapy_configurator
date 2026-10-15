@@ -4,14 +4,43 @@ Visuelles Tool zur **Erstellung und Prüfung** von EnCoDaPy-Konfigurationen
 (JSON) im Browser. Das Tool ist ein eigener, leichtgewichtiger Subfolder und
 ist **nicht** mit einem laufenden EnCoDaPy-Service verbunden.
 
-## Start
+## Umgebung (Poetry)
+
+Das Tool hat eine **eigene Poetry-Umgebung** (unabhängig von der
+EnCoDaPy-Hauptumgebung), damit Streamlit und seine transitiven Abhängigkeiten
+keine Konflikte mit dem Hauptpaket verursachen. `encodapy` selbst wird per
+Path-Dependency eingebunden:
+
+```toml
+# encodaconfig/pyproject.toml (Auszug)
+encodapy = { path = "..", develop = true }
+streamlit = ">=1.40"
+```
+
+Installation und Start:
+
+```bash
+cd encodaconfig
+poetry install
+poetry run streamlit run app.py
+```
+
+Die App läuft lokal im Browser (`http://localhost:8501`).
+
+Tests laufen aus der Sub-Umgebung ebenfalls (das Hauptpaket ist ja per
+Path eingebunden):
+
+```bash
+cd encodaconfig
+poetry run pytest ../tests/encodaconfig -q
+```
+
+## Start (alternativ ohne Poetry)
 
 ```bash
 pip install streamlit
 streamlit run encodaconfig/app.py
 ```
-
-Die App läuft lokal im Browser (`http://localhost:8501`).
 
 ## Funktionsweise
 
