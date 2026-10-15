@@ -373,8 +373,8 @@ class TestExternalComponentDetection:
     def test_find_component_candidates(self, tmp_path):
         from encodaconfig.external import (
             find_component_candidates,
-            register_zip,
             loaded_paths,
+            register_zip,
         )
 
         zip_path = self._make_component_zip(tmp_path)
@@ -398,8 +398,8 @@ class TestExternalComponentDetection:
     def test_no_components_found_for_plain_zip(self, tmp_path):
         from encodaconfig.external import (
             find_component_candidates,
-            register_zip,
             loaded_paths,
+            register_zip,
         )
 
         zip_path = self._make_component_zip(tmp_path, valid=False)
@@ -412,8 +412,8 @@ class TestEmptyComponentType:
     loader lookups or issues."""
 
     def test_empty_type_component_is_skipped(self):
-        from encodaconfig.check import check_component_wiring
         from encodaconfig import check_configuration
+        from encodaconfig.check import check_component_wiring
 
         config = {
             "interfaces": {"mqtt": False, "fiware": True, "file": False},
