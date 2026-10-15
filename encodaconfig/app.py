@@ -6,9 +6,9 @@ Run with:
     streamlit run encodaconfig/app.py
 
 The app is a thin layer over the core modules (validation, components,
-check): the configuration is held in the Streamlit session state, can be
-exported as JSON (download or optional file path) and is not connected
-to a running EnCoDaPy service.
+check, env requirements): the configuration is held in the Streamlit
+session state, can be exported as JSON (download or optional file path)
+and is not connected to a running EnCoDaPy service.
 """
 
 import json
@@ -19,27 +19,18 @@ import streamlit as st
 
 from encodaconfig.check import check_configuration
 from encodaconfig.components import get_builtin_component_types, get_component_io
+from encodaconfig.env_requirements import generate_env_template, get_env_requirements
 from encodaconfig.external import register_zip
 from encodapy.config.types import Interfaces
 from encodapy.utils.units import TimeUnits
 
 st.set_page_config(page_title="EnCoDaPy Configurator", page_icon="⚙️", layout="wide")
 
-
-@st.cache_data(show_spinner=False)
-def _get_component_io_cached(component_type: str):
-    """Cached wrapper: component imports are expensive."""
-    if not component_type:
-        return None
-    try:
-        return get_component_io(component_type)
-    except (AttributeError, ImportError, KeyError, TypeError):
-        return None
-
-
+GITHUB_REPO_URL = "https://github.com/gewv-tu-dresden/encodapy"
 DOCS_URL = "https://gewv-tu-dresden.github.io/encodapy/"
 DOCS_CONFIG_URL = f"{DOCS_URL}basic_service.html"
 DOCS_COMPONENTS_URL = f"{DOCS_URL}components.html"
+DOCS_ENV_URL = f"{DOCS_URL}basic_service.html"
 GEWV_URL = "https://tu-dresden.de/ing/maschinenwesen/iet/gewv"
 LOGO_URL = (
     "https://raw.githubusercontent.com/gewv-tu-dresden/encodapy/main/"
@@ -52,11 +43,22 @@ ENTITY_SECTIONS = {
     "staticdata": "staticdata",
     "outputs": "output",
 }
-INTERFACE_HELP = {
-    "mqtt": f"MQTT Interface – [Doku]({DOCS_URL}interfaces.html)",
-    "fiware": f"FIWARE Interface – [Doku]({DOCS_URL}interfaces.html)",
-    "file": f"FILE Interface – [Doku]({DOCS_URL}interfaces.html)",
+SECTION_DESCRIPTIONS = {
+    "inputs": "Input data of the controller (e.g. sensor data).",
+    "staticdata": "Static data (e.g. device parameterization).",
+    "outputs": "Output data of the controller (e.g. results, commands).",
 }
+
+
+@st.cache_data(show_spinner=False)
+def _get_component_io_cached(component_type: str):
+    """Cached wrapper: component imports are expensive."""
+    if not component_type:
+        return None
+    try:
+        return get_component_io(component_type)
+    except (AttributeError, ImportError, KeyError, TypeError):
+        return None
 
 
 def new_config() -> dict[str, Any]:
@@ -97,6 +99,15 @@ def ensure_state() -> None:
         load_config_to_state(new_config())
 
 
+def component_type_options() -> list[str]:
+    """Selectable component types: built-in + loaded external packages."""
+    options = get_builtin_component_types()
+    for package in st.session_state.get("ext_packages", []) or []:
+        if package not in options:
+            options.append(package)
+    return options
+
+
 def render_entity(section: str, index: int) -> None:
     """Render form fields for one entity (input/staticdata/output)."""
     config = st.session_state["config"]
@@ -107,7 +118,7 @@ def render_entity(section: str, index: int) -> None:
         f"ID {index + 1}",
         value=entity.get("id", ""),
         key=f"{section}_{index}_id",
-        help="Eindeutige ID der Entity (z. B. 'thermal_storage').",
+        help="Unique ID of the entity (e.g. 'thermal_storage').",
     )
     iface_value = entity.get("interface", "fiware")
     iface_options = [e.value for e in Interfaces]
@@ -116,22 +127,22 @@ def render_entity(section: str, index: int) -> None:
         options=iface_options,
         index=iface_options.index(iface_value),
         key=f"{section}_{index}_iface",
-        help="Über welches Interface werden die Daten übertragen? "
-        "Das Interface muss im Tab 'Interfaces' aktiviert sein.",
+        help="Interface used to transfer the data. The interface must be "
+        "activated in the 'Interfaces' tab.",
     )
     if col_col.button("Delete", key=f"{section}_{index}_del"):
         entities.pop(index)
         st.rerun()
     entity["id_interface"] = st.text_input(
-        f"ID interface {index + 1} (leer = ID)",
+        f"ID interface {index + 1} (empty = ID)",
         value=entity.get("id_interface", ""),
         key=f"{section}_{index}_idiface",
-        help="ID der Entity auf dem Interface (FIWARE-Entity-ID, MQTT-Topic …). "
-        "Leer lassen, um die ID zu verwenden.",
+        help="ID of the entity on the interface (FIWARE entity ID, MQTT "
+        "topic ...). Leave empty to use the ID.",
     )
     attributes = entity.setdefault("attributes", [])
     if st.button(
-        f"+ Attribut hinzufügen ({entity['id'] or section})",
+        f"+ Add attribute ({entity['id'] or section})",
         key=f"{section}_{index}_addattr",
     ):
         attributes.append({"id": ""})
@@ -139,17 +150,17 @@ def render_entity(section: str, index: int) -> None:
     for attr_idx, attribute in enumerate(attributes):
         col_a, col_b, col_c = st.columns([3, 3, 1])
         attribute["id"] = col_a.text_input(
-            f"Attribut {attr_idx + 1}",
+            f"Attribute {attr_idx + 1}",
             value=attribute.get("id", ""),
             key=f"{section}_{index}_attr{attr_idx}_id",
-            help="Eindeutige ID des Attributs (z. B. 'temperature_1'). "
-            "Komponenten referenzieren später genau diese ID.",
+            help="Unique ID of the attribute (e.g. 'temperature_1'). "
+            "Components reference exactly this ID later on.",
         )
         attribute["id_interface"] = col_b.text_input(
-            f"Attribut ID interface {attr_idx + 1} (leer = ID)",
+            f"Attribute ID interface {attr_idx + 1} (empty = ID)",
             value=attribute.get("id_interface", ""),
             key=f"{section}_{index}_attr{attr_idx}_idiface",
-            help="ID des Attributs auf dem Interface (FIWARE-Attributname …).",
+            help="ID of the attribute on the interface (e.g. FIWARE attribute name).",
         )
         if col_c.button("✕", key=f"{section}_{index}_attr{attr_idx}_del"):
             attributes.pop(attr_idx)
@@ -162,21 +173,30 @@ def render_component(index: int) -> None:
     components = config["controller_components"]
     component = components[index]
     component["id"] = st.text_input(
-        f"Komponenten-ID {index + 1}",
+        f"Component ID {index + 1}",
         value=component.get("id", ""),
         key=f"comp_{index}_id",
-        help="Eindeutige ID der Komponente im Controller.",
+        help="Unique ID of the component within the controller.",
     )
-    component["type"] = st.text_input(
-        f"Typ {index + 1}",
-        value=component.get("type", ""),
+    options = component_type_options()
+    current_type = component.get("type", "")
+    type_options = [""] + options
+    if current_type and current_type not in type_options:
+        type_options.append(current_type)
+    component["type"] = st.selectbox(
+        f"Component type {index + 1} (search, or type a dotted path for "
+        "external components)",
+        options=type_options,
+        index=type_options.index(current_type) if current_type in type_options else 0,
         key=f"comp_{index}_type",
-        help="Interner Komponententyp (z. B. 'thermal_storage', "
-        "'two_point_controller') oder dotted path für externe Komponenten "
-        "(z. B. 'my_package.my_component'). Siehe die Liste der internen "
-        "Komponenten in der Sidebar.",
+        accept_new_options=True,
+        filter_mode="fuzzy",
+        help="Built-in component types are listed; start typing to search. "
+        "For external components, enter the dotted path (e.g. "
+        "'my_package.my_component') of a package installed in the "
+        "environment.",
     )
-    if st.button("Komponente entfernen", key=f"comp_{index}_del"):
+    if st.button("Remove component", key=f"comp_{index}_del"):
         components.pop(index)
         st.rerun()
     io = (
@@ -187,20 +207,20 @@ def render_component(index: int) -> None:
     if io is None:
         if component.get("type"):
             st.warning(
-                f"Komponententyp '{component['type']}' nicht gefunden "
-                "(Modul nicht installierbar oder Name falsch). "
-                "Externe Komponenten müssen als Paket installiert sein."
+                f"Component type '{component['type']}' not found "
+                "(module not importable or wrong name). External "
+                "components must be installed as a package or loaded via "
+                "ZIP/wheel in the sidebar."
             )
         return
     st.success(
-        f"✅ Komponente erkannt – {len(io['inputs'])} Inputs, "
-        f"{len(io['outputs'])} Outputs, {len(io['config'])} Config-Felder."
+        f"✅ Component recognized – {len(io['inputs'])} inputs, "
+        f"{len(io['outputs'])} outputs, {len(io['config'])} config fields."
     )
     st.caption(
-        "Ordne jedem Feld eine Entity + ein Attribut aus deinen "
-        "Inputs/Staticdata/Outputs zu (Dropdowns). Optionale Felder können "
-        "leer bleiben – sie werden dann nicht in die Konfiguration "
-        "übernommen."
+        "Map each field to an entity + attribute from your inputs/"
+        "staticdata/outputs (dropdowns). Optional fields may stay empty – "
+        "they are then omitted from the configuration."
     )
     for direction in ["inputs", "outputs"]:
         expected = io[direction]
@@ -209,7 +229,7 @@ def render_component(index: int) -> None:
         allocated = component.setdefault(direction, {})
         st.markdown(
             f"**{direction.capitalize()}** "
-            f"({'alle erforderlich' if all(f['required'] for f in expected.values()) else '⚠️ = erforderlich'})"
+            f"({'all required' if all(f['required'] for f in expected.values()) else '⚠️ = required'})"
         )
         for field_name, field_info in expected.items():
             current = allocated.setdefault(field_name, {"entity": "", "attribute": ""})
@@ -233,46 +253,40 @@ def render_component(index: int) -> None:
             if attribute_value and attribute_value not in attribute_options:
                 attribute_options.append(attribute_value)
             current["attribute"] = col_a.selectbox(
-                f"{field_name} → Attribut",
+                f"{field_name} → Attribute",
                 options=attribute_options,
                 index=attribute_options.index(attribute_value)
                 if attribute_value in attribute_options
                 else 0,
                 key=f"comp_{index}_{direction}_{field_name}_attribute",
             )
-            col_req.markdown("⚠️ erforderlich" if field_info["required"] else "optional")
+            col_req.markdown("⚠️ required" if field_info["required"] else "optional")
     if io["config"]:
         config_fields = component.setdefault("config", {})
-        st.markdown("**Config (statische Werte oder Referenzen)**")
+        st.markdown("**Config (static values or references)**")
         st.caption(
-            "Config-Felder sind statische Einstellungen der Komponente: "
-            "entweder als direkter Wert (JSON) oder als Referenz auf eine "
-            "Entity + Attribut der Staticdata. Nicht benötigte Felder leer "
-            "lassen."
+            "Config fields are static component settings: either as a "
+            "direct value (JSON) or as a reference to an entity + "
+            "attribute of your staticdata. Leave unused fields empty."
         )
         for field_name in io["config"]:
             value = config_fields.get(field_name, "")
+            is_reference = isinstance(value, dict) and "entity" in value
+            is_direct = isinstance(value, dict) and "value" in value
+            mode_index = 1 if is_reference else 2 if is_direct else 0
             mode = st.radio(
-                f"{field_name}: Modus",
-                [
-                    "nicht gesetzt",
-                    "Referenz (Entity + Attribut)",
-                    "direkter Wert (JSON)",
-                ],
-                index=2
-                if isinstance(value, dict) and "value" in value
-                else 1
-                if isinstance(value, dict) and "entity" in value
-                else 0,
+                f"{field_name}: mode",
+                ["not set", "Reference (entity + attribute)", "Direct value (JSON)"],
+                index=mode_index,
                 key=f"comp_{index}_config_{field_name}_mode",
                 horizontal=True,
             )
-            if mode == "nicht gesetzt":
+            if mode == "not set":
                 config_fields.pop(field_name, None)
                 continue
-            if mode == "Referenz (Entity + Attribut)":
+            if mode == "Reference (entity + attribute)":
                 options = datapoint_options(st.session_state["config"])
-                entry = value if isinstance(value, dict) and "entity" in value else {}
+                entry = value if is_reference else {}
                 entity_options = [""] + list(options)
                 entity_value = entry.get("entity", "")
                 col_e, col_a = st.columns(2)
@@ -283,7 +297,7 @@ def render_component(index: int) -> None:
                     key=f"comp_{index}_config_{field_name}_entity",
                 )
                 attribute = col_a.selectbox(
-                    f"{field_name} → Attribut",
+                    f"{field_name} → Attribute",
                     options=[""] + list(options.get(entity, {}).get("attributes", {})),
                     key=f"comp_{index}_config_{field_name}_attribute",
                 )
@@ -296,10 +310,8 @@ def render_component(index: int) -> None:
                     config_fields.pop(field_name, None)
                 continue
             raw = st.text_input(
-                f'{field_name} → Wert (JSON, z. B. 100, "air" oder {{"a": 1}})',
-                value=json.dumps(value["value"])
-                if isinstance(value, dict) and "value" in value
-                else str(value or ""),
+                f'{field_name} → Value (JSON, e.g. 100, "air" or {{"a": 1}})',
+                value=json.dumps(value["value"]) if is_direct else str(value or ""),
                 key=f"comp_{index}_config_{field_name}_value",
             )
             if raw:
@@ -332,26 +344,26 @@ def render_report(report: dict[str, Any]) -> None:
     wiring_issues: list[dict[str, str]] = report["wiring_issues"]
     if not errors and not wiring_issues:
         st.success(
-            "✅ **Konfiguration ist valide.** Alle Modellprüfungen und die "
-            "Komponenten-Verdrahtung sind erfolgreich – die Konfiguration "
-            "kann exportiert und verwendet werden."
+            "✅ **Configuration is valid.** All model checks and the "
+            "component wiring passed – the configuration can be exported "
+            "and used."
         )
         return
-    st.subheader("Modellprüfung (Pydantic)")
+    st.subheader("Model validation (Pydantic)")
     st.caption(
-        "Diese Fehler stammen direkt aus den EnCoDaPy-Modellen "
-        "(`ConfigModel`) – dieselben Prüfungen wie beim Start des Services."
+        "These errors come directly from the EnCoDaPy models "
+        "(`ConfigModel`) – the same checks as at service start."
     )
     if errors:
         for err in errors:
             st.error(f"**{err['loc']}** – {err['msg']}")
     else:
-        st.markdown("✅ Keine Modellfehler.")
-    st.subheader("Komponenten-Verdrautung")
+        st.markdown("✅ No model errors.")
+    st.subheader("Component wiring")
     st.caption(
-        "Prüft, ob die zugeordneten Entities/Attribute existieren, alle "
-        "erforderlichen Inputs/Outputs zugeordnet sind und keine "
-        "unbekannten Zuordnungen vorhanden sind."
+        "Checks whether the mapped entities/attributes exist, all "
+        "required inputs/outputs are allocated and no unknown mappings "
+        "are present."
     )
     if wiring_issues:
         by_component: dict[str, list[dict[str, str]]] = {}
@@ -359,12 +371,12 @@ def render_report(report: dict[str, Any]) -> None:
             by_component.setdefault(issue["component"], []).append(issue)
         for component_id, issues in by_component.items():
             with st.expander(
-                f"🔧 {component_id} ({len(issues)} Probleme)", expanded=True
+                f"🔧 {component_id} ({len(issues)} issues)", expanded=True
             ):
                 for issue in issues:
                     st.warning(f"{issue['direction']}/{issue['field']}: {issue['msg']}")
     else:
-        st.markdown("✅ Keine Verdrahtungsprobleme.")
+        st.markdown("✅ No wiring issues.")
 
 
 def main() -> None:
@@ -373,24 +385,22 @@ def main() -> None:
     config = st.session_state["config"]
 
     with st.sidebar:
-        st.image(LOGO_URL, width=180)
         st.markdown(
-            f"[GEWV / TU Dresden]({GEWV_URL}) · [EnCoDaPy-Doku]({DOCS_URL})",
-            unsafe_allow_html=False,
+            f'<a href="{GEWV_URL}" target="_blank">'
+            f'<img src="{LOGO_URL}" width="180"></a>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"**EnCoDaPy Configurator** — visual creation and validation "
+            f"of EnCoDaPy configurations.\n\n"
+            f"📄 Docs: [Configuration]({DOCS_CONFIG_URL}) · "
+            f"[Components]({DOCS_COMPONENTS_URL})\n\n"
+            f"🐙 [GitHub: gewv-tu-dresden/encodapy]({GITHUB_REPO_URL})"
         )
         st.divider()
-        st.title("⚙️ EnCoDaPy Configurator")
-        st.caption(
-            "Visuelle Erstellung und Prüfung von EnCoDaPy-Konfigurationen "
-            "auf Basis der vorhandenen Pydantic-Modelle. "
-            f"Siehe [Projekt-Doku]({DOCS_URL}) und "
-            f"[Komponenten-Doku]({DOCS_COMPONENTS_URL})."
-        )
-        st.divider()
-        st.markdown("#### Bestehende Konfiguration prüfen")
+        st.markdown("#### Validate an existing configuration")
         uploaded = st.file_uploader(
-            "JSON-Datei hochladen – wird validiert und kann anschließend "
-            "in allen Tabs bearbeitet werden",
+            "Upload a JSON file – it is validated and can then be edited in all tabs",
             type="json",
             key="config_upload",
         )
@@ -402,27 +412,26 @@ def main() -> None:
                 st.session_state["uploaded_name"] = uploaded.name
                 st.rerun()
             except json.JSONDecodeError as error:
-                st.error(f"Ungültiges JSON: {error}")
+                st.error(f"Invalid JSON: {error}")
         if st.session_state.get("uploaded_name"):
-            st.caption(f"Geladen: {st.session_state['uploaded_name']}")
-        if st.button("🗑️ Neue (leere) Konfiguration starten"):
+            st.caption(f"Loaded: {st.session_state['uploaded_name']}")
+        if st.button("🗑️ Start new (empty) configuration"):
             load_config_to_state(new_config())
             st.session_state.pop("uploaded_name", None)
             st.rerun()
         st.divider()
-        st.markdown("#### Verfügbare Komponenten")
-        st.write(", ".join(get_builtin_component_types()))
-        st.divider()
-        st.markdown("#### Externe Komponenten einbinden")
+        st.markdown("#### External components")
         st.caption(
-            "Variante 1 (empfohlen, wie beim Service-Start): Paket in der "
-            "Umgebung installieren (`pip install bspw_package_components_example`) "
-            "und den Typ als dotted path angeben.\n"
-            "Variante 2: ZIP/Wheel des Pakets hochladen – es wird für diese "
-            "Session importierbar gemacht (kein Schreiben in die Umgebung)."
+            "**Option 1 (recommended, as at service start):** install the "
+            "package in the environment (`pip install "
+            "bspw_package_components_example`) and enter the type as "
+            "dotted path.\n\n"
+            "**Option 2:** upload the ZIP/wheel of the package – it is "
+            "made importable for this session (no writes to the "
+            "environment)."
         )
         ext_upload = st.file_uploader(
-            "ZIP oder Wheel eines Komponenten-Pakets",
+            "ZIP or wheel of a component package",
             type=["zip", "whl"],
             key="ext_upload",
         )
@@ -434,15 +443,9 @@ def main() -> None:
                 st.session_state["ext_loaded_name"] = ext_upload.name
                 st.session_state["ext_packages"] = packages
                 _get_component_io_cached.clear()
-                st.success(f"Paket geladen. Top-Level-Pakete: {', '.join(packages)}")
+                st.success(f"Package loaded. Top-level packages: {', '.join(packages)}")
             except (zipfile.BadZipFile, OSError) as error:
-                st.error(f"Paket konnte nicht geladen werden: {error}")
-        if st.session_state.get("ext_packages"):
-            st.caption(
-                "Verwende als Komponenten-Typ z. B. `"
-                + "` oder `".join(st.session_state["ext_packages"])
-                + ".komponentenname``."
-            )
+                st.error(f"Could not load the package: {error}")
 
     tabs = st.tabs(
         [
@@ -450,9 +453,10 @@ def main() -> None:
             "⬇️ Inputs",
             "📁 Staticdata",
             "⬆️ Outputs",
-            "🔧 Komponenten",
+            "🔧 Components",
             "⏱️ Settings",
-            "✅ Prüfung",
+            "🌱 ENV",
+            "✅ Validation",
             "📤 Export",
         ]
     )
@@ -460,29 +464,21 @@ def main() -> None:
     with tabs[0]:
         st.header("Interfaces")
         st.caption(
-            "Aktiviere mindestens ein Interface. Jede Entity in Inputs/"
-            "Staticdata/Outputs nutzt genau eines davon. "
-            f"[Doku: Konfiguration]({DOCS_CONFIG_URL})"
+            "Activate at least one interface. Every entity in inputs/"
+            "staticdata/outputs uses exactly one of them. "
+            f"[Docs: configuration]({DOCS_CONFIG_URL})"
         )
         for interface in INTERFACES:
             config["interfaces"][interface] = st.checkbox(
                 interface.upper(),
                 value=config["interfaces"].get(interface, False),
-                help=INTERFACE_HELP[interface],
             )
 
     for tab_pos, section in enumerate(["inputs", "staticdata", "outputs"], start=1):
         with tabs[tab_pos]:
             st.header(section.capitalize())
-            st.caption(
-                {
-                    "inputs": "Eingabedaten des Controllers (z. B. Sensordaten).",
-                    "staticdata": "Statische Daten (z. B. Parametrierung von Anlagen).",
-                    "outputs": "Ausgabedaten des Controllers (z. B. Rechenergebnisse, Befehle).",
-                }[section]
-                + f" [Doku]({DOCS_CONFIG_URL})"
-            )
-            if st.button(f"+ {section[:-1]} hinzufügen", key=f"add_{section}"):
+            st.caption(f"{SECTION_DESCRIPTIONS[section]} [Docs]({DOCS_CONFIG_URL})")
+            if st.button(f"+ Add {section[:-1]}", key=f"add_{section}"):
                 config[section].append({"id": "", "attributes": []})
                 st.rerun()
             for index in range(len(config[section])):
@@ -496,18 +492,18 @@ def main() -> None:
     with tabs[4]:
         st.header("Controller Components")
         st.caption(
-            "Komponenten führen die Berechnungen aus. Wähle einen Typ – die "
-            "erwarteten Inputs/Outputs werden automatisch aus dem "
-            "Komponenten-Modell geladen (identisch zum Service-Start) und "
-            "können hier mit den Entities/Attributen aus den anderen Tabs "
-            f"verknüpft werden. [Doku: Komponenten]({DOCS_COMPONENTS_URL})"
+            "Components perform the calculations. Select a type – the "
+            "expected inputs/outputs are loaded automatically from the "
+            "component model (identical to service start) and can be "
+            "mapped to the entities/attributes from the other tabs. "
+            f"[Docs: components]({DOCS_COMPONENTS_URL})"
         )
-        if st.button("+ Komponente hinzufügen", key="add_component"):
+        if st.button("+ Add component", key="add_component"):
             config["controller_components"].append({"id": "", "type": ""})
             st.rerun()
         for index in range(len(config["controller_components"])):
             with st.expander(
-                f"Komponente {index + 1}: "
+                f"Component {index + 1}: "
                 f"{config['controller_components'][index].get('id', '?')}"
             ):
                 render_component(index)
@@ -515,8 +511,8 @@ def main() -> None:
     with tabs[5]:
         st.header("Controller Settings")
         st.caption(
-            "Zeiteinstellungen für die Berechnung. Details in der "
-            f"[Doku]({DOCS_CONFIG_URL})."
+            "Time settings for the calculation. Details in the "
+            f"[docs]({DOCS_CONFIG_URL})."
         )
         calculation = config["controller_settings"]["time_settings"].setdefault(
             "calculation", {}
@@ -527,10 +523,10 @@ def main() -> None:
             min_value=0.0,
             value=float(calculation.get("timerange") or 0),
             step=1.0,
-            help="Zeitraum, für den gerechnet wird (z. B. 60 Minuten zurück).",
+            help="Period the calculation covers (e.g. the last 60 minutes).",
         )
         calculation["timerange_unit"] = col2.selectbox(
-            "Timerange Einheit",
+            "Timerange unit",
             options=[e.value for e in TimeUnits],
             index=0,
         )
@@ -539,67 +535,103 @@ def main() -> None:
             min_value=0.0,
             value=float(calculation.get("timestep") or 1),
             step=1.0,
-            help="Schrittweite der Berechnung.",
+            help="Step size of the calculation.",
         )
         calculation["timestep_unit"] = col2.selectbox(
-            "Timestep Einheit",
+            "Timestep unit",
             options=[e.value for e in TimeUnits],
             index=0,
             key="timestep_unit_sel",
         )
         calculation["sampling_time"] = col1.number_input(
-            "Sampling Time",
+            "Sampling time",
             min_value=0.0,
             value=float(calculation.get("sampling_time") or 1),
             step=1.0,
-            help="Abtastzeit für die Datenaufnahme.",
+            help="Sampling time for data acquisition.",
         )
         calculation["sampling_time_unit"] = col3.selectbox(
-            "Sampling Time Einheit",
+            "Sampling time unit",
             options=[e.value for e in TimeUnits],
             index=0,
         )
 
     with tabs[6]:
-        st.header("Prüfung")
+        st.header("Environment Variables")
         st.caption(
-            "Zusammenfassung aller Prüfungen: Modellvalidierung "
-            "(identisch zum Service-Start) und Komponenten-Verdrautung. "
-            "Alle Probleme werden hier mit Ort und Beschreibung aufgelistet."
+            "Based on the interfaces activated in the configuration, the "
+            "following environment variables are required/optional for "
+            "the service. Copy the template below into a `.env` file next "
+            f"to the service. [Docs]({DOCS_ENV_URL})"
+        )
+        groups = get_env_requirements(config["interfaces"])
+        for group, fields in groups.items():
+            st.markdown(f"**{group}**")
+            rows = []
+            for field in fields:
+                rows.append(
+                    {
+                        "Variable": field["name"],
+                        "Required": "yes" if field["required"] else "no (default)",
+                        "Default": field["default"],
+                        "Description": field["description"],
+                    }
+                )
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.subheader("`.env` template")
+        template = generate_env_template(config["interfaces"])
+        st.code(template, language="dotenv")
+        st.download_button(
+            "⬇️ Download .env template",
+            data=template,
+            file_name=".env",
+            mime="text/plain",
+        )
+
+    with tabs[7]:
+        st.header("Validation")
+        st.caption(
+            "Summary of all checks: model validation (identical to "
+            "service start) and component wiring. All problems are "
+            "listed here with location and description."
         )
         report = check_configuration(config)
         render_report(report)
 
-    with tabs[7]:
+    with tabs[8]:
         st.header("Export")
         st.caption(
-            "Die Konfiguration wird nicht automatisch gespeichert – exportiere "
-            "sie als JSON (Download) oder speichere sie auf einem Pfad deiner "
-            "Wahl. Das Tool ist nicht mit einem laufenden EnCoDaPy-Service "
-            "verbunden."
+            "The configuration is not saved automatically – export it as "
+            "JSON (download) or save it to a path of your choice. The "
+            "tool is not connected to a running EnCoDaPy service."
         )
-        export = {key: value for key, value in config.items() if key != "name"}
-        export["name"] = config.get("name", "config")
+        config["name"] = st.text_input(
+            "Configuration name",
+            value=config.get("name", "config"),
+            help="Used as file name in the export and for documentation "
+            "purposes (see docs).",
+        )
+        export = {key: value for key, value in config.items()}
         json_text = json.dumps(export, indent=2, ensure_ascii=False, default=str)
         st.download_button(
-            "⬇️ Konfiguration als JSON herunterladen",
+            "⬇️ Download configuration as JSON",
             data=json_text,
             file_name=f"{config.get('name', 'config')}.json",
             mime="application/json",
         )
-        with st.expander("JSON-Vorschau"):
+        with st.expander("JSON preview"):
             st.code(json_text, language="json")
         save_path = st.text_input(
-            "Optional: Pfad zum Abspeichern der JSON-Datei",
-            help="z. B. /home/user/configs/my_config.json",
+            "Optional: path to save the JSON file",
+            help="e.g. /home/user/configs/my_config.json",
         )
-        if save_path and st.button("Datei speichern"):
+        if save_path and st.button("Save file"):
             try:
                 with open(save_path, "w", encoding="utf-8") as file:
                     file.write(json_text)
-                st.success(f"Gespeichert unter {save_path}")
+                st.success(f"Saved to {save_path}")
             except OSError as error:
-                st.error(f"Speichern fehlgeschlagen: {error}")
+                st.error(f"Saving failed: {error}")
 
 
 if __name__ == "__main__":

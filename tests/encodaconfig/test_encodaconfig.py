@@ -298,3 +298,33 @@ class TestExternalComponents:
         packages = register_zip(zip_path.read_bytes(), "pkg.zip")
         assert "bspw_pkg" in packages
         assert any("encodaconfig_ext_" in p for p in loaded_paths())
+
+
+class TestEnvRequirements:
+    """Tests for the ENV requirements introspection."""
+
+    def test_fiware_env_required_variables(self):
+        from encodaconfig.env_requirements import get_env_requirements
+
+        groups = get_env_requirements({"mqtt": False, "fiware": True, "file": False})
+        assert any("fiware" in key for key in groups)
+        fiware_fields = groups["fiware (FIWARE_ prefix)"]
+        required = {f["name"] for f in fiware_fields if f["required"]}
+        assert "FIWARE_SERVICE" in required
+        assert "FIWARE_CB_URL" not in required  # has a default
+
+    def test_inactive_interfaces_not_listed(self):
+        from encodaconfig.env_requirements import get_env_requirements
+
+        groups = get_env_requirements({"mqtt": False, "fiware": False, "file": True})
+        assert not any("fiware" in key for key in groups)
+        assert not any("mqtt" in key for key in groups)
+        assert any("file" in key for key in groups)
+
+    def test_env_template_generation(self):
+        from encodaconfig.env_requirements import generate_env_template
+
+        template = generate_env_template({"mqtt": True, "fiware": True, "file": False})
+        assert template.startswith("# .env template")
+        assert "FIWARE_SERVICE=" in template  # required: uncommented
+        assert "# MQTT_HOST=127.0.0.1" in template  # optional: commented
